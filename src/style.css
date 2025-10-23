@@ -1,0 +1,80 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #1a1a1a;
+  color: white;
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+#canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#ui {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 20px;
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+}
+
+#ui h1 {
+  margin-bottom: 20px;
+  font-size: 24px;
+  color: #00ff88;
+}
+
+#controls {
+  margin-bottom: 20px;
+}
+
+#controls button {
+  margin-right: 10px;
+  padding: 10px 15px;
+  background: #00ff88;
+  color: black;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+#controls button:hover {
+  background: #00cc6a;
+}
+
+#controls button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+#stats {
+  font-family: monospace;
+  font-size: 14px;
+}
+
+#stats div {
+  margin-bottom: 5px;
+}
+
+#stats span {
+  color: #00ff88;
+  font-weight: bold;
+}
