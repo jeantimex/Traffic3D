@@ -7,9 +7,14 @@ export class Car {
     this.duration = duration;
 
     this.tempDirection = new THREE.Vector3();
-    this.tempFlatDirection = new THREE.Vector3();
-    this.lastLoggedIndex = -1;
-    this.twoPi = Math.PI * 2;
+    this.tempRight = new THREE.Vector3();
+    this.tempUp = new THREE.Vector3();
+
+    this.worldUp = new THREE.Vector3(0, 1, 0);
+    this.rotationMatrix = new THREE.Matrix4();
+    this.targetQuaternion = new THREE.Quaternion();
+    this.currentQuaternion = new THREE.Quaternion();
+    this.hasOrientation = false;
 
     this.createMesh();
     this.createAnimation();
@@ -58,67 +63,44 @@ export class Car {
   }
 
   updateOrientation() {
-    if (!this.spacedPoints || this.spacedPoints.length < 3) {
+    if (!this.spacedPoints || this.spacedPoints.length < 3 || !this.action) {
       return;
     }
 
     const wrappedTime = (this.action.time % this.duration + this.duration) % this.duration;
     const progress = wrappedTime / this.duration;
 
-    const segmentCount = this.spacedPoints.length - 1;
-    const scaledIndex = progress * segmentCount;
-    const baseIndex = Math.floor(scaledIndex) % segmentCount;
-
-    const segmentStart = this.spacedPoints[baseIndex];
-    const segmentEnd = this.spacedPoints[baseIndex + 1];
-
-    // Derive forward direction from the actual segment the car is travelling on
-    this.tempDirection.subVectors(segmentEnd, segmentStart);
-
-    if (this.tempDirection.lengthSq() > 1e-6) {
-      this.tempFlatDirection.set(this.tempDirection.x, 0, this.tempDirection.z).normalize();
-
-      if (this.tempFlatDirection.lengthSq() > 1e-6) {
-        const targetAngle = Math.atan2(this.tempFlatDirection.x, this.tempFlatDirection.z);
-
-        const referenceAngle = this.lastAngle !== undefined ? this.lastAngle : targetAngle;
-        const wrappedTarget = this.normalizeAngleToReference(targetAngle, referenceAngle);
-        const previousAngle = this.lastAngle !== undefined ? this.lastAngle : wrappedTarget;
-
-        let angleDiff = wrappedTarget - previousAngle;
-
-        if (this.lastLoggedIndex !== baseIndex) {
-          this.lastLoggedIndex = baseIndex;
-          console.log(`Segment ${baseIndex}: heading ${wrappedTarget.toFixed(3)} rad`);
-        }
-
-        if (Math.abs(angleDiff) > 1.0) {
-          const start = segmentStart;
-          const end = segmentEnd;
-          console.warn(
-            `Heading spike at segment ${baseIndex} (progress ${progress.toFixed(3)}): ` +
-            `angleDiff=${angleDiff.toFixed(3)} target=${wrappedTarget.toFixed(3)} ` +
-            `start=(${start.x.toFixed(2)}, ${start.y.toFixed(2)}, ${start.z.toFixed(2)}) ` +
-            `end=(${end.x.toFixed(2)}, ${end.y.toFixed(2)}, ${end.z.toFixed(2)})`
-          );
-        }
-
-        const damping = 0.2;
-        const smoothedAngle = previousAngle + angleDiff * damping;
-        this.lastAngle = this.normalizeAngle(smoothedAngle);
-        this.mesh.rotation.set(0, this.lastAngle, 0);
-      }
+    const tangent = this.curve.getTangentAt(progress);
+    if (tangent.lengthSq() < 1e-6) {
+      return;
     }
-  }
 
-  normalizeAngle(angle) {
-    return THREE.MathUtils.euclideanModulo(angle + Math.PI, this.twoPi) - Math.PI;
-  }
+    this.tempDirection.copy(tangent).normalize();
 
-  normalizeAngleToReference(angle, reference) {
-    const delta = angle - reference;
-    const wrappedDelta = THREE.MathUtils.euclideanModulo(delta + Math.PI, this.twoPi) - Math.PI;
-    return reference + wrappedDelta;
+    // Build an orientation basis that keeps the car upright relative to world up
+    this.tempRight.crossVectors(this.worldUp, this.tempDirection);
+    if (this.tempRight.lengthSq() < 1e-6) {
+      // Tangent is nearly parallel to up; choose an arbitrary perpendicular axis
+      this.tempRight.set(1, 0, 0);
+      this.tempRight.cross(this.tempDirection);
+    }
+    this.tempRight.normalize();
+
+    this.tempUp.crossVectors(this.tempDirection, this.tempRight).normalize();
+
+    this.rotationMatrix.makeBasis(this.tempRight, this.tempUp, this.tempDirection);
+    this.targetQuaternion.setFromRotationMatrix(this.rotationMatrix);
+
+    if (!this.hasOrientation) {
+      this.currentQuaternion.copy(this.targetQuaternion);
+      this.mesh.quaternion.copy(this.currentQuaternion);
+      this.hasOrientation = true;
+      return;
+    }
+
+    const damping = 0.2;
+    this.currentQuaternion.slerp(this.targetQuaternion, damping);
+    this.mesh.quaternion.copy(this.currentQuaternion);
   }
 
   setSpeed(speed) {

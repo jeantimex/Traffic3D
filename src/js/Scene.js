@@ -30,7 +30,7 @@ export class Scene {
   }
 
   setupCamera() {
-    this.camera.position.set(10, 10, 10);
+    this.camera.position.set(40, 30, 40);
     this.camera.lookAt(0, 0, 0);
   }
 
