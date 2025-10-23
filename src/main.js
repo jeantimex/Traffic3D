@@ -18,10 +18,20 @@ class TrafficSimulation {
     this.scene.add(this.curve.getMesh());
 
     this.cars = [];
-    const car = new Car(this.curve, 0xff0000, 10);
-    car.setSpeed(1.0);
-    this.cars.push(car);
-    this.scene.add(car.getMesh());
+    const carConfigs = [
+      { color: 0xff0000, speed: 1.0 },
+      { color: 0x00ff00, speed: 1.3 },
+      { color: 0x0000ff, speed: 0.7 }
+    ];
+
+    carConfigs.forEach(({ color, speed }, index) => {
+      const car = new Car(this.curve, color, 10);
+      car.setSpeed(speed);
+      const phaseOffset = (car.action.getClip().duration / carConfigs.length) * index;
+      car.action.time = phaseOffset;
+      this.cars.push(car);
+      this.scene.add(car.getMesh());
+    });
   }
 
   animate() {
