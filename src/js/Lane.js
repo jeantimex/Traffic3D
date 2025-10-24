@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+// Internal node for the circular doubly-linked list that keeps cars ordered
+// by their arc-length position on the curve.
 class LaneNode {
   constructor(car) {
     this.car = car;
@@ -8,6 +10,9 @@ class LaneNode {
   }
 }
 
+// A Lane owns a Curve and manages a set of Car instances on that curve. It keeps
+// the cars sorted, computes IDM leader/follower relationships, and advances the
+// simulation each frame.
 export class Lane {
   constructor(curve) {
     this.curve = curve;
@@ -25,6 +30,7 @@ export class Lane {
     this.nodes.push(node);
 
     car.setTrackLength(this.totalLength);
+    // Seed the car somewhere along the closed curve (arc-length coordinate).
     car.position = THREE.MathUtils.euclideanModulo(initialPosition, this.totalLength);
     car.updatePose(this.totalLength);
 
@@ -44,6 +50,7 @@ export class Lane {
       return;
     }
 
+    // Keep cached length in sync so spacing on the closed curve stays accurate.
     this.totalLength = this.curve.getLength();
     for (const node of this.nodes) {
       node.car.setTrackLength(this.totalLength);
@@ -58,6 +65,7 @@ export class Lane {
       const car = node.car;
 
       if (nodeCount === 1) {
+        // No leader: run free-road IDM term only.
         accelerations[i] = car.computeAcceleration(Infinity, 0);
         continue;
       }
@@ -69,6 +77,7 @@ export class Lane {
       }
       gap = Math.max(0, gap - car.halfLength - leader.halfLength);
 
+      // deltaSpeed is positive when this car is faster than the leader.
       const deltaSpeed = car.speed - leader.speed;
       accelerations[i] = car.computeAcceleration(gap, deltaSpeed);
     }
@@ -79,6 +88,7 @@ export class Lane {
     }
   }
 
+  // Sorts cars by arc-length position and rebuilds circular list connections.
   sortAndLink() {
     if (this.nodes.length === 0) {
       this.head = null;

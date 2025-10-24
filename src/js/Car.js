@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+// Represents a single vehicle travelling along a Curve. The car keeps track
+// of its kinematic state (position, speed, acceleration) and updates itself
+// using the Intelligent Driver Model (IDM) to follow the vehicle ahead while
+// respecting a target speed. The class is also responsible for orienting the
+// mesh so that it matches the curve tangent and for reacting to dat.GUI edits.
 export class Car {
   constructor(curve, {
     color = 0xff0000,
@@ -35,6 +40,7 @@ export class Car {
     this.position = initialPosition;
     this.curveLength = this.curve.getLength();
 
+    // Temporary vectors/quaternions reused per frame to avoid allocations.
     this.tempDirection = new THREE.Vector3();
     this.tempRight = new THREE.Vector3();
     this.tempUp = new THREE.Vector3();
@@ -48,6 +54,8 @@ export class Car {
     this.updatePose(this.curveLength);
   }
 
+  // Creates a simple box to represent the car body. Geometry is rebuilt when
+  // the dimensions change via the GUI.
   createMesh() {
     const geometry = new THREE.BoxGeometry(this.width, this.height, this.length);
     const material = new THREE.MeshBasicMaterial({ color: this.color });
@@ -61,6 +69,7 @@ export class Car {
     }
   }
 
+  // Rebuilds the box geometry when a dimension slider is changed.
   setDimensions({ length, width, height }) {
     const needsUpdate =
       (typeof length === 'number' && length > 0 && length !== this.length) ||
@@ -93,15 +102,21 @@ export class Car {
     this.curveLength = length;
   }
 
+  // Intelligent Driver Model (IDM) acceleration response.
+  // gap........ distance to the next car (meters) along the curve.
+  // deltaSpeed. positive when we are faster than the car ahead.
   computeAcceleration(gap, deltaSpeed) {
+    // Free-road term pulls the car toward its max speed when traffic is clear.
     const freeRoadTerm = Math.pow(this.speed / Math.max(this.maxSpeed, 1e-3), 4);
 
+    // Desired spacing blends constant distance with braking compensation for closing speeds.
     let desiredGap = Math.max(this.minGap, this.distanceGap);
     if (deltaSpeed > 0 && this.maxAcceleration > 0 && this.comfortableDeceleration > 0) {
       const brakingTerm = (this.speed * deltaSpeed) / (2 * Math.sqrt(this.maxAcceleration * this.comfortableDeceleration));
       desiredGap += Math.max(0, brakingTerm);
     }
 
+    // Interaction term penalises following too closely relative to the desired gap.
     let interactionTerm = 0;
     if (Number.isFinite(gap)) {
       const safeGap = Math.max(this.minGap, gap);
@@ -112,16 +127,19 @@ export class Car {
     return acceleration;
   }
 
+  // Semi-implicit Euler step for the arc-length position along the lane.
   integrate(acceleration, deltaTime, trackLength) {
     this.acceleration = acceleration;
     this.speed = THREE.MathUtils.clamp(this.speed + this.acceleration * deltaTime, 0, this.maxSpeed);
 
     const nextPosition = this.position + this.speed * deltaTime;
+    // Wrap the arc-length position because the curve is closed.
     this.position = THREE.MathUtils.euclideanModulo(nextPosition, trackLength);
 
     this.updatePose(trackLength);
   }
 
+  // Aligns the car with the curve tangent and keeps the mesh hovering above it.
   updatePose(trackLength) {
     if (trackLength > 0) {
       this.curveLength = trackLength;
@@ -141,6 +159,7 @@ export class Car {
     this.tempRight.normalize();
     this.tempUp.crossVectors(this.tempDirection, this.tempRight).normalize();
 
+    // Construct an ONB where +Z is forward, +Y is local up, +X is right.
     this.rotationMatrix.makeBasis(this.tempRight, this.tempUp, this.tempDirection);
     this.targetQuaternion.setFromRotationMatrix(this.rotationMatrix);
 
@@ -189,6 +208,7 @@ export class Car {
     }
   }
 
+  // Expose mesh for scene graph parenting.
   getMesh() {
     return this.mesh;
   }

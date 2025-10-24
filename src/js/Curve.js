@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+// Defines a closed Catmull-Rom spline used as the driving lane.
+// Responsible for authoring the control points, visualising the path,
+// and exposing helpers to query points/tangents/length along the track.
 export class Curve {
   constructor(points) {
     this.points = points || this.generateDefaultPoints();
@@ -9,6 +12,9 @@ export class Curve {
     this.createVisualization();
   }
 
+  // Builds a wavy loop that sits above ground. This shapes the lane,
+  // introducing elevation and radial variation so the cars experience
+  // hills and gentle bends while remaining on a closed track.
   generateDefaultPoints() {
     const segments = 16;
     const radius = 45;
@@ -44,6 +50,7 @@ export class Curve {
     return this.curve.getTangentAt(t);
   }
 
+  // Returns the total arc length of the curve (in world units).
   getLength() {
     return this.curve.getLength();
   }

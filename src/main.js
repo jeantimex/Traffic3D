@@ -6,6 +6,8 @@ import { Car } from './js/Car.js';
 import { Lane } from './js/Lane.js';
 import { GUI } from 'dat.gui';
 
+// Orchestrates the traffic simulation: builds the lane, instantiates cars,
+// wires up the IDM lane manager, and exposes runtime tweaking via dat.GUI.
 class TrafficSimulation {
   constructor() {
     this.scene = new Scene();
@@ -24,6 +26,7 @@ class TrafficSimulation {
     this.lane = new Lane(this.curve);
     this.cars = [];
 
+    // Initial car presets. Speeds/headways can be overridden via the GUI.
     const carConfigs = [
       { color: 0xff0000, maxSpeed: 10, initialSpeed: 5, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 1 },
       { color: 0x00ff00, maxSpeed: 18, initialSpeed: 12, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 },

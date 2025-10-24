@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+// Thin wrapper around the Three.js scene, renderer, camera, and controls.
+// Keeps rendering concerns isolated from the simulation logic.
 export class Scene {
   constructor() {
     this.scene = new THREE.Scene();
@@ -22,6 +24,7 @@ export class Scene {
   }
 
   setupGround() {
+    // Simple ground plane for visual reference.
     const groundGeometry = new THREE.PlaneGeometry(100, 100);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0xd3d3d3 });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
