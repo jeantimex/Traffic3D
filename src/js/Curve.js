@@ -44,6 +44,10 @@ export class Curve {
     return this.curve.getTangentAt(t);
   }
 
+  getLength() {
+    return this.curve.getLength();
+  }
+
   getMesh() {
     return this.mesh;
   }

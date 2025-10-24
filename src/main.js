@@ -25,26 +25,26 @@ class TrafficSimulation {
     this.cars = [];
 
     const carConfigs = [
-      { color: 0xff0000, desiredSpeed: 10, initialSpeed: 5, timeHeadway: 0.3, minGap: 1.0, constantGap: 2.5 },
-      { color: 0x00ff00, desiredSpeed: 5, initialSpeed: 2, timeHeadway: 0.3, minGap: 1.0, constantGap: 2.5 },
-      { color: 0x0000ff, desiredSpeed: 20, initialSpeed: 10, timeHeadway: 0.3, minGap: 1.0, constantGap: 2.5 }
+      { color: 0xff0000, maxSpeed: 10, initialSpeed: 5, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 1 },
+      { color: 0x00ff00, maxSpeed: 18, initialSpeed: 12, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 },
+      { color: 0x0000ff, maxSpeed: 25, initialSpeed: 15, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 }
     ];
 
     const laneLength = this.lane.getLength();
     const initialSpacing = 8;
 
-    carConfigs.forEach(({ color, desiredSpeed, initialSpeed, timeHeadway, minGap, constantGap }, index) => {
+    carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
       const car = new Car(this.curve, {
         color,
-        desiredSpeed,
+        maxSpeed,
         initialSpeed,
-        timeHeadway,
+        safeTimeHeadway,
         minGap,
-        constantGap
+        distanceGap
       });
 
-      const initialS = (initialSpacing * index) % laneLength;
-      this.lane.addCar(car, initialS);
+      const initialPosition = (initialSpacing * index) % laneLength;
+      this.lane.addCar(car, initialPosition);
       this.cars.push(car);
       this.scene.add(car.getMesh());
     });
@@ -63,15 +63,13 @@ class TrafficSimulation {
 
     this.cars.forEach((car, index) => {
       const folder = this.gui.addFolder(`Car ${index + 1}`);
-      const params = { desiredSpeed: car.desiredSpeed };
+      const params = { maxSpeed: car.maxSpeed };
 
-      folder.add(params, 'desiredSpeed', 5, 30, 0.1)
-        .name('Desired speed')
+      folder.add(params, 'maxSpeed', 5, 30, 0.1)
+        .name('Max speed')
         .onChange(value => {
-          car.setDesiredSpeed(value);
-          if (car.speed > value) {
-            car.setSpeed(value);
-          }
+          car.setMaxSpeed(value);
+          car.setSpeed(car.speed);
         });
 
       folder.open();

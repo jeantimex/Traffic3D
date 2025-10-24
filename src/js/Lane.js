@@ -12,7 +12,7 @@ export class Lane {
   constructor(curve) {
     this.curve = curve;
     this.nodes = [];
-    this.totalLength = this.curve.curve.getLength();
+    this.totalLength = this.curve.getLength();
     this.head = null;
   }
 
@@ -20,12 +20,12 @@ export class Lane {
     return this.totalLength;
   }
 
-  addCar(car, initialS = 0) {
+  addCar(car, initialPosition = 0) {
     const node = new LaneNode(car);
     this.nodes.push(node);
 
     car.setTrackLength(this.totalLength);
-    car.s = THREE.MathUtils.euclideanModulo(initialS, this.totalLength);
+    car.position = THREE.MathUtils.euclideanModulo(initialPosition, this.totalLength);
     car.updatePose(this.totalLength);
 
     this.sortAndLink();
@@ -44,7 +44,7 @@ export class Lane {
       return;
     }
 
-    this.totalLength = this.curve.curve.getLength();
+    this.totalLength = this.curve.getLength();
     for (const node of this.nodes) {
       node.car.setTrackLength(this.totalLength);
     }
@@ -63,7 +63,7 @@ export class Lane {
       }
 
       const leader = node.next.car;
-      let gap = leader.s - car.s;
+      let gap = leader.position - car.position;
       if (gap <= 0) {
         gap += this.totalLength;
       }
@@ -85,7 +85,7 @@ export class Lane {
       return;
     }
 
-    this.nodes.sort((a, b) => a.car.s - b.car.s);
+    this.nodes.sort((a, b) => a.car.position - b.car.position);
 
     const len = this.nodes.length;
     for (let i = 0; i < len; i++) {

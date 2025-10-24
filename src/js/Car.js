@@ -6,14 +6,14 @@ export class Car {
     length = 4,
     width = 2,
     height = 1,
-    desiredSpeed = 12,
+    maxSpeed = 12,
     maxAcceleration = 3,
     comfortableDeceleration = 2,
-    timeHeadway = 1.5,
+    safeTimeHeadway = 1.5,
     minGap = 2,
-    constantGap = 3,
+    distanceGap = 3,
     initialSpeed = 0,
-    initialS = 0
+    initialPosition = 0
   } = {}) {
     this.curve = curve;
     this.color = color;
@@ -23,17 +23,17 @@ export class Car {
     this.height = height;
     this.halfLength = this.length * 0.5;
 
-    this.desiredSpeed = desiredSpeed;
+    this.maxSpeed = Math.max(0.1, maxSpeed);
     this.maxAcceleration = maxAcceleration;
     this.comfortableDeceleration = comfortableDeceleration;
-    this.timeHeadway = timeHeadway;
+    this.safeTimeHeadway = safeTimeHeadway;
     this.minGap = minGap;
-    this.constantGap = constantGap;
+    this.distanceGap = distanceGap;
 
-    this.speed = Math.max(0, initialSpeed);
+    this.speed = THREE.MathUtils.clamp(initialSpeed, 0, this.maxSpeed);
     this.acceleration = 0;
-    this.s = initialS;
-    this.curveLength = this.curve.curve.getLength();
+    this.position = initialPosition;
+    this.curveLength = this.curve.getLength();
 
     this.tempDirection = new THREE.Vector3();
     this.tempRight = new THREE.Vector3();
@@ -59,9 +59,9 @@ export class Car {
   }
 
   computeAcceleration(gap, deltaSpeed) {
-    const freeRoadTerm = Math.pow(this.speed / Math.max(this.desiredSpeed, 1e-3), 4);
+    const freeRoadTerm = Math.pow(this.speed / Math.max(this.maxSpeed, 1e-3), 4);
 
-    let desiredGap = Math.max(this.minGap, this.constantGap);
+    let desiredGap = Math.max(this.minGap, this.distanceGap);
     if (deltaSpeed > 0 && this.maxAcceleration > 0 && this.comfortableDeceleration > 0) {
       const brakingTerm = (this.speed * deltaSpeed) / (2 * Math.sqrt(this.maxAcceleration * this.comfortableDeceleration));
       desiredGap += Math.max(0, brakingTerm);
@@ -79,10 +79,10 @@ export class Car {
 
   integrate(acceleration, deltaTime, trackLength) {
     this.acceleration = acceleration;
-    this.speed = Math.max(0, this.speed + this.acceleration * deltaTime);
+    this.speed = THREE.MathUtils.clamp(this.speed + this.acceleration * deltaTime, 0, this.maxSpeed);
 
-    const nextS = this.s + this.speed * deltaTime;
-    this.s = THREE.MathUtils.euclideanModulo(nextS, trackLength);
+    const nextPosition = this.position + this.speed * deltaTime;
+    this.position = THREE.MathUtils.euclideanModulo(nextPosition, trackLength);
 
     this.updatePose(trackLength);
   }
@@ -93,7 +93,7 @@ export class Car {
     }
 
     const length = Math.max(this.curveLength, 1e-6);
-    const u = THREE.MathUtils.euclideanModulo(this.s / length, 1);
+    const u = THREE.MathUtils.euclideanModulo(this.position / length, 1);
 
     const point = this.curve.getPointAt(u);
     const tangent = this.curve.getTangentAt(u);
@@ -122,11 +122,12 @@ export class Car {
   }
 
   setSpeed(speed) {
-    this.speed = Math.max(0, speed);
+    this.speed = THREE.MathUtils.clamp(speed, 0, this.maxSpeed);
   }
 
-  setDesiredSpeed(speed) {
-    this.desiredSpeed = Math.max(0.1, speed);
+  setMaxSpeed(speed) {
+    this.maxSpeed = Math.max(0.1, speed);
+    this.speed = Math.min(this.speed, this.maxSpeed);
   }
 
   getMesh() {
