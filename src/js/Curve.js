@@ -10,17 +10,18 @@ export class Curve {
   }
 
   generateDefaultPoints() {
-    const segments = 12;
-    const radius = 25;
-    const heightAmplitude = 8;
+    const segments = 16;
+    const radius = 45;
+    const heightAmplitude = 10;
     const baseHeight = 12;
     const points = [];
 
     for (let i = 0; i < segments; i++) {
       const t = i / segments;
       const angle = t * Math.PI * 2;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+      const radialOffset = radius + Math.sin(angle * 3) * 6;
+      const x = Math.cos(angle) * radialOffset;
+      const z = Math.sin(angle) * radialOffset;
       const y = baseHeight + Math.sin(angle * 2) * heightAmplitude;
       points.push(new THREE.Vector3(x, y, z));
     }
