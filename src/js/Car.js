@@ -8,17 +8,17 @@ import * as THREE from 'three';
 export class Car {
   constructor(curve, {
     color = 0xff0000,
-    length = 4,
-    width = 2,
-    height = 1,
-    maxSpeed = 12,
-    maxAcceleration = 3,
-    comfortableDeceleration = 2,
-    safeTimeHeadway = 1.5,
-    minGap = 1,
-    distanceGap = 3,
-    initialSpeed = 0,
-    initialPosition = 0
+    length = 4,                 // meters
+    width = 2,                  // meters
+    height = 1,                 // meters
+    maxSpeed = 12,              // meters / second
+    maxAcceleration = 3,        // meters / second^2
+    comfortableDeceleration = 2,// meters / second^2
+    safeTimeHeadway = 1.5,      // seconds
+    minGap = 1,                 // meters (minimum bumper-to-bumper)
+    distanceGap = 3,            // meters (constant desired spacing)
+    initialSpeed = 0,           // meters / second
+    initialPosition = 0         // meters along the curve
   } = {}) {
     this.curve = curve;
     this.color = color;

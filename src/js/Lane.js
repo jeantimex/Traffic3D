@@ -17,7 +17,7 @@ export class Lane {
   constructor(curve) {
     this.curve = curve;
     this.nodes = [];
-    this.totalLength = this.curve.getLength();
+    this.totalLength = this.curve.getLength(); // meters
     this.head = null;
   }
 
