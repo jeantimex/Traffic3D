@@ -10,7 +10,7 @@ export class Car {
     maxAcceleration = 3,
     comfortableDeceleration = 2,
     safeTimeHeadway = 1.5,
-    minGap = 2,
+    minGap = 1,
     distanceGap = 3,
     initialSpeed = 0,
     initialPosition = 0
@@ -52,6 +52,41 @@ export class Car {
     const geometry = new THREE.BoxGeometry(this.width, this.height, this.length);
     const material = new THREE.MeshBasicMaterial({ color: this.color });
     this.mesh = new THREE.Mesh(geometry, material);
+  }
+
+  setColor(color) {
+    this.color = color;
+    if (this.mesh?.material) {
+      this.mesh.material.color.setHex(color);
+    }
+  }
+
+  setDimensions({ length, width, height }) {
+    const needsUpdate =
+      (typeof length === 'number' && length > 0 && length !== this.length) ||
+      (typeof width === 'number' && width > 0 && width !== this.width) ||
+      (typeof height === 'number' && height > 0 && height !== this.height);
+
+    if (!needsUpdate) {
+      return;
+    }
+
+    if (typeof length === 'number' && length > 0) {
+      this.length = length;
+      this.halfLength = this.length * 0.5;
+    }
+
+    if (typeof width === 'number' && width > 0) {
+      this.width = width;
+    }
+
+    if (typeof height === 'number' && height > 0) {
+      this.height = height;
+    }
+
+    const geometry = new THREE.BoxGeometry(this.width, this.height, this.length);
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = geometry;
   }
 
   setTrackLength(length) {
@@ -128,6 +163,30 @@ export class Car {
   setMaxSpeed(speed) {
     this.maxSpeed = Math.max(0.1, speed);
     this.speed = Math.min(this.speed, this.maxSpeed);
+  }
+
+  setMaxAcceleration(value) {
+    if (typeof value === 'number' && value > 0) {
+      this.maxAcceleration = value;
+    }
+  }
+
+  setComfortableDeceleration(value) {
+    if (typeof value === 'number' && value > 0) {
+      this.comfortableDeceleration = value;
+    }
+  }
+
+  setSafeTimeHeadway(value) {
+    if (typeof value === 'number' && value >= 0) {
+      this.safeTimeHeadway = value;
+    }
+  }
+
+  setDistanceGap(value) {
+    if (typeof value === 'number' && value > 0) {
+      this.distanceGap = value;
+    }
   }
 
   getMesh() {
