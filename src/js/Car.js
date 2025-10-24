@@ -152,11 +152,15 @@ export class Car {
     const tangent = this.curve.getTangentAt(u);
 
     this.tempDirection.copy(tangent).normalize();
+    // Build a Frenet-like frame: project the world up vector onto a plane
+    // perpendicular to the tangent so that the car stays upright while
+    // still following banking changes in the curve.
     this.tempRight.crossVectors(this.worldUp, this.tempDirection);
     if (this.tempRight.lengthSq() < 1e-6) {
       this.tempRight.set(1, 0, 0).cross(this.tempDirection);
     }
     this.tempRight.normalize();
+    // Recompute a local up vector that is orthogonal to both forward and right.
     this.tempUp.crossVectors(this.tempDirection, this.tempRight).normalize();
 
     // Construct an ONB where +Z is forward, +Y is local up, +X is right.
@@ -167,6 +171,8 @@ export class Car {
       this.currentQuaternion.copy(this.targetQuaternion);
       this.hasOrientation = true;
     } else {
+      // Ease toward the new orientation so the car does not snap during
+      // tight turns or large changes in the tangent direction.
       const damping = 0.25;
       this.currentQuaternion.slerp(this.targetQuaternion, damping);
     }
