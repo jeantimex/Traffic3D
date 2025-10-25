@@ -27,6 +27,7 @@ export class Lane {
   constructor({ shapes = [], samplesPerSegment = 24, color = 0x000000 } = {}) {
     this.samplesPerSegment = samplesPerSegment;
     this.lineColor = color;
+    this.laneIndex = 0; // index within a road (0 = left-most)
 
     // Car bookkeeping
     this.carNodes = [];
@@ -72,6 +73,10 @@ export class Lane {
 
   getMesh() {
     return this.mesh;
+  }
+
+  setLaneIndex(index) {
+    this.laneIndex = index;
   }
 
   disposeMesh() {

@@ -6,8 +6,10 @@ import * as THREE from 'three';
 // respecting a target speed. The class is also responsible for orienting the
 // mesh so that it matches the curve tangent and for reacting to dat.GUI edits.
 export class Car {
-  constructor(path, {
+  constructor({
     road = null,                // Road instance this car belongs to (used for lane context).
+    laneIndex = 0,              // Lane index within the current road (0 = left-most).
+    path = null,                // Optional explicit path override (defaults to road lane path).
     color = 0xff0000,
     length = 4,                 // meters
     width = 2,                  // meters
@@ -21,8 +23,12 @@ export class Car {
     initialSpeed = 0,            // Initial velocity along the lane (m/s).
     initialPosition = 0          // Starting arc-length offset along the composed lane (meters, wraps automatically).
   } = {}) {
-    this.path = path;
     this.road = road;
+    this.laneIndex = laneIndex;
+    this.path = path || (road ? road.getLane(laneIndex) : null);
+    if (!this.path) {
+      throw new Error('Car requires a valid lane path. Provide a road with lanes or a `path` override.');
+    }
     this.color = color;
 
     this.length = length;
@@ -221,10 +227,32 @@ export class Car {
 
   setRoad(road) {
     this.road = road;
+    if (road && typeof this.laneIndex === 'number') {
+      const lane = road.getLane(this.laneIndex);
+      if (lane) {
+        this.path = lane;
+        this.setPathLength(lane.getLength());
+      }
+    }
   }
 
   getRoad() {
     return this.road;
+  }
+
+  setLaneIndex(index) {
+    this.laneIndex = index;
+    if (this.road) {
+      const lane = this.road.getLane(index);
+      if (lane) {
+        this.path = lane;
+        this.setPathLength(lane.getLength());
+      }
+    }
+  }
+
+  getLane() {
+    return this.path;
   }
 
   // Expose mesh for scene graph parenting.

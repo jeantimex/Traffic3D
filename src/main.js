@@ -23,9 +23,10 @@ class TrafficSimulation {
 
   setupScene() {
     const shapes = createRunningTrackShapes();
-    this.lane = new Lane({ shapes });
-    this.road = new Road([this.lane]);
-    this.scene.add(this.lane.getMesh());
+    const primaryLane = new Lane({ shapes });
+    this.road = new Road([primaryLane]);
+    this.scene.add(primaryLane.getMesh());
+    this.lane = primaryLane;
     this.cars = [];
 
     // Initial car presets. Speeds/headways can be overridden via the GUI.
@@ -39,8 +40,9 @@ class TrafficSimulation {
     const initialSpacing = 8;
 
     carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
-      const car = new Car(this.lane, {
+      const car = new Car({
         road: this.road,
+        laneIndex: 0,
         color,
         maxSpeed,
         initialSpeed,

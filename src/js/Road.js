@@ -1,54 +1,55 @@
-// Represents a group of parallel lanes that form a single-direction road.
-// Lanes are stored in a doubly linked list where `prev` points to the lane on
-// the driver's left-hand side and `next` points to the lane on the right-hand
-// side. This structure makes it easy to reason about lane changes in either
-// direction.
-class RoadLaneNode {
-  constructor(lane) {
-    this.lane = lane;
-    this.prev = null; // Lane to the left of the driving direction
-    this.next = null; // Lane to the right of the driving direction
-  }
-}
-
+// Represents a group of parallel lanes travelling in the same direction. Lanes
+// are stored in a simple array where index 0 is the left-most lane, index 1 is
+// immediately to the right, and so on. This keeps reasoning about lane changes
+// straightforward and avoids extra pointer bookkeeping.
 export class Road {
   constructor(lanes = []) {
-    this.nodes = [];
-    this.currentNode = null;
-    this.setLanes(lanes);
+    this.lanes = [];
+    this.currentLaneIndex = 0;
+    lanes.forEach(lane => this.addLane(lane));
   }
 
-  setLanes(lanes = []) {
-    this.nodes = lanes.map(lane => new RoadLaneNode(lane));
-
-    const len = this.nodes.length;
-    for (let i = 0; i < len; i++) {
-      const node = this.nodes[i];
-      node.prev = i > 0 ? this.nodes[i - 1] : null;
-      node.next = i < len - 1 ? this.nodes[i + 1] : null;
+  reindexLanes() {
+    this.lanes.forEach((lane, index) => {
+      if (typeof lane.setLaneIndex === 'function') {
+        lane.setLaneIndex(index);
+      } else {
+        lane.laneIndex = index;
+      }
+    });
+    if (this.currentLaneIndex >= this.lanes.length) {
+      this.currentLaneIndex = Math.max(0, this.lanes.length - 1);
     }
-
-    this.currentNode = this.nodes[0] || null;
   }
 
-  addLane(lane, index = this.nodes.length) {
-    const node = new RoadLaneNode(lane);
-    this.nodes.splice(index, 0, node);
-    this.setLanes(this.nodes.map(n => n.lane));
-    return node;
+  addLane(lane, index = this.lanes.length) {
+    this.lanes.splice(index, 0, lane);
+    this.reindexLanes();
+    return lane;
+  }
+
+  removeLane(index) {
+    if (index < 0 || index >= this.lanes.length) return null;
+    const [removed] = this.lanes.splice(index, 1);
+    this.reindexLanes();
+    return removed;
+  }
+
+  getLane(index) {
+    return this.lanes[index] || null;
+  }
+
+  getLaneCount() {
+    return this.lanes.length;
   }
 
   getCurrentLane() {
-    return this.currentNode ? this.currentNode.lane : null;
+    return this.getLane(this.currentLaneIndex);
   }
 
   setCurrentLaneByIndex(index) {
-    if (index < 0 || index >= this.nodes.length) return null;
-    this.currentNode = this.nodes[index];
-    return this.currentNode.lane;
-  }
-
-  getLaneNodes() {
-    return this.nodes;
+    if (index < 0 || index >= this.lanes.length) return null;
+    this.currentLaneIndex = index;
+    return this.getCurrentLane();
   }
 }
