@@ -59,14 +59,6 @@ export class Lane {
       node.next = this.shapeNodes[(i + 1) % len];
       node.startLength = cumulative;
       cumulative += node.length;
-
-      // Ensure continuity between consecutive segments.
-      const prevSegment = node.prev.segment;
-      const prevEnd = prevSegment.getEnd();
-      const currStart = node.segment.getStart();
-      if (!prevEnd.equals(currStart)) {
-        console.warn('Lane segment continuity gap detected', prevEnd, currStart);
-      }
     }
 
     this.totalLength = cumulative;
@@ -84,26 +76,35 @@ export class Lane {
 
   disposeMesh() {
     if (this.mesh) {
-      this.mesh.geometry.dispose();
-      this.mesh.material.dispose();
+      this.mesh.traverse(child => {
+        if (child.isLine && child.geometry && child.material) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
       this.mesh = null;
     }
   }
 
   buildMesh() {
-    const points = this.getSpacedPoints(this.samplesPerSegment);
-    if (points.length === 0) {
+    if (!this.shapeNodes.length) {
       return;
     }
 
-    // Close the loop visually.
-    if (!points[0].equals(points[points.length - 1])) {
-      points.push(points[0].clone());
-    }
+    const group = new THREE.Group();
+    this.shapeNodes.forEach(node => {
+      const points = node.segment.getSpacedPoints(this.samplesPerSegment);
+      if (points.length < 2) return;
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ color: this.lineColor });
+      group.add(new THREE.Line(geometry, material));
+    });
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: this.lineColor });
-    this.mesh = new THREE.LineLoop(geometry, material);
+    this.mesh = group;
   }
 
   getSpacedPoints(divisionsPerSegment = 24) {

@@ -104,7 +104,7 @@ class TrafficSimulation {
           car.setDimensions({ height: value });
         });
 
-      folder.add(params, 'maxSpeed', 5, 30, 0.1)
+      folder.add(params, 'maxSpeed', 5, 100, 0.1)
         .name('Max speed')
         .onChange(value => {
           car.setMaxSpeed(value);
