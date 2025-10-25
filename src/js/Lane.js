@@ -185,6 +185,54 @@ export class Lane {
     this.sortCars();
   }
 
+  findNeighbors(position, excludeCar = null) {
+    if (this.carNodes.length === 0) {
+      return { front: null, back: null, frontDistance: Infinity, backDistance: Infinity };
+    }
+
+    const length = this.totalLength;
+    const nodes = this.carNodes;
+    const filteredNodes = excludeCar ? nodes.filter(node => node.car !== excludeCar) : nodes.slice();
+
+    if (filteredNodes.length === 0) {
+      return { front: null, back: null, frontDistance: Infinity, backDistance: Infinity };
+    }
+
+    let frontNode = null;
+    for (const node of filteredNodes) {
+      if (node.car.position > position) {
+        frontNode = node;
+        break;
+      }
+    }
+
+    if (!frontNode) {
+      frontNode = filteredNodes[0];
+    }
+
+    let backNode = null;
+    const frontIndex = filteredNodes.indexOf(frontNode);
+    if (frontIndex === -1 || frontIndex === 0) {
+      backNode = filteredNodes[filteredNodes.length - 1];
+    } else {
+      backNode = filteredNodes[frontIndex - 1];
+    }
+
+    const frontDistance = frontNode
+      ? THREE.MathUtils.euclideanModulo(frontNode.car.position - position, length)
+      : Infinity;
+    const backDistance = backNode
+      ? THREE.MathUtils.euclideanModulo(position - backNode.car.position, length)
+      : Infinity;
+
+    return {
+      front: frontNode ? frontNode.car : null,
+      back: backNode ? backNode.car : null,
+      frontDistance,
+      backDistance
+    };
+  }
+
   update(deltaTime) {
     if (this.carNodes.length === 0 || this.totalLength === 0) {
       return;

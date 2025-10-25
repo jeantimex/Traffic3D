@@ -30,6 +30,7 @@ export class Car {
       throw new Error('Car requires a valid lane path. Provide a road with lanes or a `path` override.');
     }
     this.color = color;
+    this.highlighted = false;
 
     this.length = length;
     this.width = width;
@@ -76,6 +77,20 @@ export class Car {
     this.color = color;
     if (this.mesh?.material) {
       this.mesh.material.color.setHex(color);
+    }
+  }
+
+  highlight(color = 0xffff00) {
+    if (this.mesh?.material) {
+      this.mesh.material.color.setHex(color);
+      this.highlighted = true;
+    }
+  }
+
+  clearHighlight() {
+    if (this.highlighted && this.mesh?.material) {
+      this.mesh.material.color.setHex(this.color);
+      this.highlighted = false;
     }
   }
 
@@ -223,6 +238,10 @@ export class Car {
     if (typeof value === 'number' && value > 0) {
       this.distanceGap = value;
     }
+  }
+
+  adjustSpeed(delta) {
+    this.setSpeed(this.speed + delta);
   }
 
   setRoad(road) {

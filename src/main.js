@@ -6,7 +6,7 @@ import { Lane } from './js/Lane.js';
 import { Road } from './js/Road.js';
 import { GUI } from 'dat.gui';
 import { LineSegment } from './js/shapes/LineSegment.js';
-import { ArcSegment } from './js/shapes/ArcSegment.js';
+import Stats from 'stats.js';
 
 // Orchestrates the traffic simulation: builds the lane, instantiates cars,
 // wires up the IDM lane manager, and exposes runtime tweaking via dat.GUI.
@@ -16,27 +16,30 @@ class TrafficSimulation {
     this.clock = new THREE.Clock();
     this.gui = new GUI({ width: 280 });
     this.guiFolders = [];
+    this.stats = new Stats();
+    this.stats.showPanel(0);
+    document.body.appendChild(this.stats.dom);
+    this.highlightedCars = new Set();
+    this.controlledCar = null;
 
     this.setupScene();
+    this.bindControls();
     this.animate();
   }
 
   setupScene() {
-    const baseStraight = 100;
-    const baseHalfStraight = baseStraight / 2;
-    const baseRadius = (400 - 2 * baseStraight) / (2 * Math.PI);
+    const laneLength = 200;
     const laneWidth = 4;
-    const laneColors = [0x000000, 0x333333, 0x666666];
+    const laneColors = [0xff0000, 0x00ff00, 0x0000ff];
 
     const laneConfigs = [0, 1, 2].map(index => ({
-      halfStraight: baseHalfStraight + index * laneWidth,
-      radius: baseRadius + index * laneWidth,
-      baseHeight: 12,
+      start: new THREE.Vector3(0, 12, index * laneWidth),
+      end: new THREE.Vector3(laneLength, 12, index * laneWidth),
       color: laneColors[index]
     }));
 
     const lanes = laneConfigs.map(config => {
-      const shapes = createRunningTrackShapes(config);
+      const shapes = createStraightLaneShapes(config);
       return new Lane({ shapes, color: config.color });
     });
 
@@ -46,32 +49,51 @@ class TrafficSimulation {
     this.cars = [];
 
     // Initial car presets. Speeds/headways can be overridden via the GUI.
-    const carConfigs = [
-      { color: 0xff0000, maxSpeed: 10, initialSpeed: 5, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 1 },
-      { color: 0x00ff00, maxSpeed: 18, initialSpeed: 12, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 },
-      { color: 0x0000ff, maxSpeed: 25, initialSpeed: 15, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 }
-    ];
+    const baseCarConfig = {
+      maxSpeed: 14,
+      initialSpeed: 7,
+      safeTimeHeadway: 0.5,
+      minGap: 1.5,
+      distanceGap: 1.5
+    };
 
-    const primaryLane = this.road.getLane(0);
-    const laneLength = primaryLane.getLength();
-    const initialSpacing = 8;
+    const laneCount = this.road.getLaneCount();
+    const randomFloat = (min, max) => min + Math.random() * (max - min);
 
-    carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
-      const car = new Car({
-        road: this.road,
-        laneIndex: 0,
-        color,
-        maxSpeed,
-        initialSpeed,
-        safeTimeHeadway,
-        minGap,
-        distanceGap
-      });
+    this.road.lanes.forEach((lane, index) => {
+      const carsInLane = index === 0 ? 1 : 3 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < carsInLane; i++) {
+        const speedScale = randomFloat(0.5, 1.2);
+        const accelScale = randomFloat(0.8, 1.2);
+        const comfortScale = randomFloat(0.8, 1.2);
+        const laneFactor = index === 0 ? 1 : 1.5;
+        const headway = baseCarConfig.safeTimeHeadway * randomFloat(0.6, 1.4) * laneFactor;
+        const minGap = baseCarConfig.minGap * randomFloat(0.8, 1.5) * laneFactor;
+        const distGap = baseCarConfig.distanceGap * randomFloat(0.7, 1.5) * laneFactor;
+        const car = new Car({
+          road: this.road,
+          laneIndex: index,
+          color: laneColors[index % laneColors.length],
+          maxSpeed: baseCarConfig.maxSpeed * speedScale,
+          initialSpeed: baseCarConfig.initialSpeed * speedScale,
+          maxAcceleration: 2 * accelScale,
+          comfortableDeceleration: 2.5 * comfortScale,
+          safeTimeHeadway: headway,
+          minGap,
+          distanceGap: distGap
+        });
 
-      const initialPosition = (initialSpacing * index) % laneLength;
-      primaryLane.addCar(car, initialPosition);
-      this.cars.push(car);
-      this.scene.add(car.getMesh());
+        const spacing = 25;
+        const offset = randomFloat(0, spacing * laneCount);
+        const initialPosition = (i * spacing + offset) % laneLength;
+        lane.addCar(car, initialPosition);
+        this.cars.push(car);
+        this.scene.add(car.getMesh());
+
+        if (index === 0 && i === 0) {
+          this.controlledCar = car;
+        }
+      }
     });
 
     this.setupGUI();
@@ -161,9 +183,103 @@ class TrafficSimulation {
     });
   }
 
-  animate() {
-    requestAnimationFrame(() => this.animate());
+  bindControls() {
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    window.addEventListener('keydown', this.handleKeyDown);
+  }
 
+  handleKeyDown(event) {
+    if (!this.controlledCar) return;
+    if (event.code === 'ArrowLeft') {
+      event.preventDefault();
+      this.requestLaneChange(-1);
+    } else if (event.code === 'ArrowRight') {
+      event.preventDefault();
+      this.requestLaneChange(1);
+    } else if (event.code === 'ArrowUp') {
+      event.preventDefault();
+      this.adjustControlledCarSpeed(1);
+    } else if (event.code === 'ArrowDown') {
+      event.preventDefault();
+      this.adjustControlledCarSpeed(-1);
+    }
+  }
+
+  requestLaneChange(direction) {
+    const car = this.controlledCar;
+    if (!car) return;
+
+    this.clearHighlights();
+
+    const targetIndex = car.laneIndex + direction;
+    if (targetIndex < 0 || targetIndex >= this.road.getLaneCount()) {
+      return;
+    }
+
+    const currentLane = car.getLane();
+    const targetLane = this.road.getLane(targetIndex);
+    const progress = currentLane ? (car.position / currentLane.getLength()) : 0;
+    const targetPosition = progress * targetLane.getLength();
+    const neighbors = targetLane.findNeighbors(targetPosition);
+
+    this.highlightNeighbors(neighbors);
+
+    if (this.isLaneChangeSafe(car, neighbors)) {
+      this.performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition);
+    }
+  }
+
+  highlightNeighbors({ front, back }) {
+    if (front) {
+      front.highlight(0x00ffff);
+      this.highlightedCars.add(front);
+    }
+    if (back) {
+      back.highlight(0xff00ff);
+      this.highlightedCars.add(back);
+    }
+  }
+
+  clearHighlights() {
+    this.highlightedCars.forEach(car => car.clearHighlight());
+    this.highlightedCars.clear();
+  }
+
+  isLaneChangeSafe(car, neighbors) {
+    const frontRequirement = car.distanceGap + car.safeTimeHeadway * car.speed + car.length;
+    const frontClear = !neighbors.front || neighbors.frontDistance > frontRequirement;
+
+    const follower = neighbors.back;
+    let followerRequirement = car.length * 0.5;
+    if (follower) {
+      followerRequirement += follower.distanceGap + follower.safeTimeHeadway * follower.speed + follower.length;
+    }
+    const backClear = !follower || neighbors.backDistance > followerRequirement;
+
+    return frontClear && backClear;
+  }
+
+  adjustControlledCarSpeed(direction) {
+    if (!this.controlledCar) return;
+    const speedDelta = direction > 0 ? 1 : -1;
+    const maxDelta = direction > 0 ? 0.5 : -0.5;
+    const targetMax = Math.max(2, this.controlledCar.maxSpeed + maxDelta);
+    this.controlledCar.setMaxSpeed(targetMax);
+    this.controlledCar.adjustSpeed(speedDelta);
+  }
+
+  performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition) {
+    if (currentLane) {
+      currentLane.removeCar(car);
+    }
+    targetLane.addCar(car, targetPosition);
+    car.setLaneIndex(targetIndex);
+    car.updatePose(targetLane.getLength());
+  }
+
+  animate() {
+    this.stats.begin();
+    requestAnimationFrame(() => this.animate());
     const deltaTime = this.clock.getDelta();
 
     const laneCount = this.road.getLaneCount();
@@ -173,36 +289,15 @@ class TrafficSimulation {
 
     this.scene.update();
     this.scene.render();
+    this.stats.end();
   }
 }
 
 new TrafficSimulation();
 
-function createRunningTrackShapes({
-  halfStraight = 50,
-  radius = 32,
-  baseHeight = 12
+function createStraightLaneShapes({
+  start = new THREE.Vector3(0, 0, 0),
+  end = new THREE.Vector3(100, 0, 0)
 } = {}) {
-  const y = baseHeight;
-  const topLeft = new THREE.Vector3(-halfStraight, y, radius);
-  const topRight = new THREE.Vector3(halfStraight, y, radius);
-  const bottomRight = new THREE.Vector3(halfStraight, y, -radius);
-  const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
-
-  return [
-    new LineSegment(topLeft, topRight),
-    new ArcSegment({
-      start: topRight,
-      end: bottomRight,
-      center: new THREE.Vector3(halfStraight, y, 0),
-      clockwise: true
-    }),
-    new LineSegment(bottomRight, bottomLeft),
-    new ArcSegment({
-      start: bottomLeft,
-      end: topLeft,
-      center: new THREE.Vector3(-halfStraight, y, 0),
-      clockwise: true
-    })
-  ];
+  return [new LineSegment(start, end)];
 }
