@@ -11,14 +11,14 @@ export class Car {
     length = 4,                 // meters
     width = 2,                  // meters
     height = 1,                 // meters
-    maxSpeed = 12,              // meters / second
-    maxAcceleration = 3,        // meters / second^2
-    comfortableDeceleration = 2,// meters / second^2
-    safeTimeHeadway = 1.5,      // seconds
-    minGap = 1,                 // meters (minimum bumper-to-bumper)
-    distanceGap = 3,            // meters (constant desired spacing)
-    initialSpeed = 0,           // meters / second
-    initialPosition = 0         // meters along the curve
+    maxSpeed = 12,               // Target cruise speed; higher values let IDM pursue faster free-road motion.
+    maxAcceleration = 3,         // How quickly the driver is willing to speed up when the road is free.
+    comfortableDeceleration = 2, // Maximum comfortable braking strength; higher values allow sharper slowdowns.
+    safeTimeHeadway = 1.5,       // Desired temporal buffer to the leader (seconds) that influences desired following distance.
+    minGap = 1,                  // Absolute minimum spacing (meters) the driver insists on even when stopped.
+    distanceGap = 3,             // Constant spacing preference (meters) added to the dynamic headway.
+    initialSpeed = 0,            // Initial velocity along the lane (m/s).
+    initialPosition = 0          // Starting arc-length offset along the composed lane (meters, wraps automatically).
   } = {}) {
     this.path = path;
     this.color = color;
@@ -28,6 +28,8 @@ export class Car {
     this.height = height;
     this.halfLength = this.length * 0.5;
 
+    // IDM behaviour knobs. Together they define how assertive the driver is
+    // when accelerating, braking, and choosing their personal space.
     this.maxSpeed = Math.max(0.1, maxSpeed);
     this.maxAcceleration = maxAcceleration;
     this.comfortableDeceleration = comfortableDeceleration;
@@ -109,8 +111,9 @@ export class Car {
     // Free-road term pulls the car toward its max speed when traffic is clear.
     const freeRoadTerm = Math.pow(this.speed / Math.max(this.maxSpeed, 1e-3), 4);
 
-    // Desired spacing blends constant distance with braking compensation for closing speeds.
-    let desiredGap = Math.max(this.minGap, this.distanceGap);
+    // Desired spacing blends the driver's constant distance preference and a speed-proportional
+    // term (safeTimeHeadway) so faster motion increases the buffer in front.
+    let desiredGap = Math.max(this.minGap, this.distanceGap + this.speed * this.safeTimeHeadway);
     if (deltaSpeed > 0 && this.maxAcceleration > 0 && this.comfortableDeceleration > 0) {
       const brakingTerm = (this.speed * deltaSpeed) / (2 * Math.sqrt(this.maxAcceleration * this.comfortableDeceleration));
       desiredGap += Math.max(0, brakingTerm);

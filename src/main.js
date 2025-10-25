@@ -115,7 +115,7 @@ class TrafficSimulation {
         .name('Max accel')
         .onChange(value => car.setMaxAcceleration(value));
 
-      folder.add(params, 'comfortableDeceleration', 0.5, 5, 0.1)
+      folder.add(params, 'comfortableDeceleration', 0.5, 8, 0.1)
         .name('Comfort decel')
         .onChange(value => car.setComfortableDeceleration(value));
 
@@ -149,6 +149,7 @@ new TrafficSimulation();
 function createRunningTrackShapes({
   totalLength = 400,
   straightLength = 100,
+  gap = 0,
   baseHeight = 12
 } = {}) {
   const radius = (totalLength - 2 * straightLength) / (2 * Math.PI);
@@ -161,18 +162,24 @@ function createRunningTrackShapes({
   const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
 
   return [
-    new LineSegment(topLeft, topRight),
+    new LineSegment(
+      topLeft,
+      topRight.clone().add(new THREE.Vector3(0, 0, gap))
+    ),
     new ArcSegment({
-      start: topRight,
-      end: bottomRight,
-      center: new THREE.Vector3(halfStraight, y, 0),
+      start: topRight.clone().add(new THREE.Vector3(0, 0, gap)),
+      end: bottomRight.clone().add(new THREE.Vector3(gap, 0, 0)),
+      center: new THREE.Vector3(halfStraight + gap, y, gap / 2),
       clockwise: true
     }),
-    new LineSegment(bottomRight, bottomLeft),
+    new LineSegment(
+      bottomRight.clone().add(new THREE.Vector3(gap, 0, 0)),
+      bottomLeft.clone().add(new THREE.Vector3(0, 0, -gap))
+    ),
     new ArcSegment({
-      start: bottomLeft,
-      end: topLeft,
-      center: new THREE.Vector3(-halfStraight, y, 0),
+      start: bottomLeft.clone().add(new THREE.Vector3(0, 0, -gap)),
+      end: topLeft.clone().add(new THREE.Vector3(-gap, 0, 0)),
+      center: new THREE.Vector3(-halfStraight - gap, y, -gap / 2),
       clockwise: true
     })
   ];
