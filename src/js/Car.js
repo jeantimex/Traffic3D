@@ -7,6 +7,7 @@ import * as THREE from 'three';
 // mesh so that it matches the curve tangent and for reacting to dat.GUI edits.
 export class Car {
   constructor(path, {
+    road = null,                // Road instance this car belongs to (used for lane context).
     color = 0xff0000,
     length = 4,                 // meters
     width = 2,                  // meters
@@ -21,6 +22,7 @@ export class Car {
     initialPosition = 0          // Starting arc-length offset along the composed lane (meters, wraps automatically).
   } = {}) {
     this.path = path;
+    this.road = road;
     this.color = color;
 
     this.length = length;
@@ -215,6 +217,14 @@ export class Car {
     if (typeof value === 'number' && value > 0) {
       this.distanceGap = value;
     }
+  }
+
+  setRoad(road) {
+    this.road = road;
+  }
+
+  getRoad() {
+    return this.road;
   }
 
   // Expose mesh for scene graph parenting.

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Scene } from './js/Scene.js';
 import { Car } from './js/Car.js';
 import { Lane } from './js/Lane.js';
+import { Road } from './js/Road.js';
 import { GUI } from 'dat.gui';
 import { LineSegment } from './js/shapes/LineSegment.js';
 import { ArcSegment } from './js/shapes/ArcSegment.js';
@@ -23,6 +24,7 @@ class TrafficSimulation {
   setupScene() {
     const shapes = createRunningTrackShapes();
     this.lane = new Lane({ shapes });
+    this.road = new Road([this.lane]);
     this.scene.add(this.lane.getMesh());
     this.cars = [];
 
@@ -38,6 +40,7 @@ class TrafficSimulation {
 
     carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
       const car = new Car(this.lane, {
+        road: this.road,
         color,
         maxSpeed,
         initialSpeed,
