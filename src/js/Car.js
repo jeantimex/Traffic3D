@@ -132,6 +132,9 @@ export class Car {
   // gap........ distance to the next car (meters) along the curve.
   // deltaSpeed. positive when we are faster than the car ahead.
   computeAcceleration(gap, deltaSpeed) {
+    if (this.laneChange?.retainSpeed) {
+      return 0;
+    }
     // Free-road term pulls the car toward its max speed when traffic is clear.
     const freeRoadTerm = Math.pow(this.speed / Math.max(this.maxSpeed, 1e-3), 4);
 
