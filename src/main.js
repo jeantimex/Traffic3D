@@ -61,7 +61,7 @@ class TrafficSimulation {
     const randomFloat = (min, max) => min + Math.random() * (max - min);
 
     this.road.lanes.forEach((lane, index) => {
-      const carsInLane = index === 0 ? 1 : 3 + Math.floor(Math.random() * 2);
+      const carsInLane = index === 0 ? 1 : 0;
       for (let i = 0; i < carsInLane; i++) {
         const speedScale = randomFloat(0.5, 1.2);
         const accelScale = randomFloat(0.8, 1.2);
@@ -224,8 +224,15 @@ class TrafficSimulation {
 
     this.highlightNeighbors(neighbors);
 
-    if (this.isLaneChangeSafe(car, neighbors)) {
-      this.performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition);
+    const safety = this.isLaneChangeSafe(car, neighbors);
+    const predictedDistance = Math.max(5, car.speed * 1.0 + 0.5 * car.maxAcceleration * 1.0 * 1.0);
+    const targetLength = targetLane.getLength();
+    if (!targetLane.closed && targetPosition + predictedDistance >= targetLength) {
+      return;
+    }
+
+    if (safety.allowed) {
+      this.performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition, progress, safety.maintainSpeed);
     }
   }
 
@@ -256,7 +263,13 @@ class TrafficSimulation {
     }
     const backClear = !follower || neighbors.backDistance > followerRequirement;
 
-    return frontClear && backClear;
+    const maintainSpeed = frontClear && backClear &&
+      (!neighbors.front || neighbors.front.speed >= car.speed - 0.5);
+
+    return {
+      allowed: frontClear && backClear,
+      maintainSpeed
+    };
   }
 
   adjustControlledCarSpeed(direction) {
@@ -268,9 +281,33 @@ class TrafficSimulation {
     this.controlledCar.adjustSpeed(speedDelta);
   }
 
-  performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition) {
+  performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition, progress, retainSpeed) {
     if (currentLane) {
+      const fromLane = currentLane;
+      const fromLength = fromLane.getLength();
+      const fromProgress = fromLength > 0 ? car.position / fromLength : 0;
+      const targetLength = targetLane.getLength();
+      const duration = 1.0;
+      const predictedDistance = Math.max(5, car.speed * duration + 0.5 * car.maxAcceleration * duration * duration);
+      const targetDistance = Math.min(predictedDistance, targetLength > 0 ? targetLength * 0.5 : predictedDistance);
+      let endPosition = targetPosition;
+      if (targetLength > 0) {
+        if (targetLane.closed) {
+          endPosition = THREE.MathUtils.euclideanModulo(targetPosition + targetDistance, targetLength);
+        } else {
+          endPosition = Math.min(targetPosition + targetDistance, targetLength);
+          if (endPosition >= targetLength) {
+            return;
+          }
+        }
+      }
+      const toProgress = targetLength > 0 && targetLength > 1e-6 ? endPosition / targetLength : 0;
       currentLane.removeCar(car);
+      targetLane.addCar(car, targetPosition);
+      car.setLaneIndex(targetIndex);
+      car.updatePose(targetLane.getLength());
+      car.startLaneChange(fromLane, fromProgress, targetLane, toProgress, targetDistance, duration, retainSpeed);
+      return;
     }
     targetLane.addCar(car, targetPosition);
     car.setLaneIndex(targetIndex);
@@ -286,6 +323,7 @@ class TrafficSimulation {
     for (let i = 0; i < laneCount; i++) {
       this.road.getLane(i)?.update(deltaTime);
     }
+    this.cars.forEach(car => car.updateLaneChange(deltaTime));
 
     this.scene.update();
     this.scene.render();

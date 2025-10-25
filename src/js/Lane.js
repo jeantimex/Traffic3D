@@ -28,6 +28,7 @@ export class Lane {
     this.samplesPerSegment = samplesPerSegment;
     this.lineColor = color;
     this.laneIndex = 0; // index within a road (0 = left-most)
+    this.closed = false;
 
     // Car bookkeeping
     this.carNodes = [];
@@ -64,6 +65,9 @@ export class Lane {
 
     this.totalLength = cumulative;
     this.shapeHead = this.shapeNodes[0];
+    const firstStart = this.shapeNodes[0]?.segment?.getStart ? this.shapeNodes[0].segment.getStart() : null;
+    const lastEnd = this.shapeNodes[len - 1]?.segment?.getEnd ? this.shapeNodes[len - 1].segment.getEnd() : null;
+    this.closed = !!(firstStart && lastEnd && firstStart.distanceToSquared(lastEnd) < 1e-4);
     this.buildMesh();
   }
 
@@ -199,31 +203,31 @@ export class Lane {
     }
 
     let frontNode = null;
+    let backNode = null;
+    let frontDistance = Infinity;
+    let backDistance = Infinity;
+
     for (const node of filteredNodes) {
-      if (node.car.position > position) {
+      const diff = node.car.position - position;
+      if (diff > 0 && diff < frontDistance) {
+        frontDistance = diff;
         frontNode = node;
-        break;
+      } else if (diff < 0 && -diff < backDistance) {
+        backDistance = -diff;
+        backNode = node;
       }
     }
 
-    if (!frontNode) {
-      frontNode = filteredNodes[0];
+    if (this.closed) {
+      if (!frontNode) {
+        frontNode = filteredNodes[0];
+        frontDistance = length - position + frontNode.car.position;
+      }
+      if (!backNode) {
+        backNode = filteredNodes[filteredNodes.length - 1];
+        backDistance = position + (length - backNode.car.position);
+      }
     }
-
-    let backNode = null;
-    const frontIndex = filteredNodes.indexOf(frontNode);
-    if (frontIndex === -1 || frontIndex === 0) {
-      backNode = filteredNodes[filteredNodes.length - 1];
-    } else {
-      backNode = filteredNodes[frontIndex - 1];
-    }
-
-    const frontDistance = frontNode
-      ? THREE.MathUtils.euclideanModulo(frontNode.car.position - position, length)
-      : Infinity;
-    const backDistance = backNode
-      ? THREE.MathUtils.euclideanModulo(position - backNode.car.position, length)
-      : Infinity;
 
     return {
       front: frontNode ? frontNode.car : null,

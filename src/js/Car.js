@@ -60,6 +60,7 @@ export class Car {
     this.targetQuaternion = new THREE.Quaternion();
     this.currentQuaternion = new THREE.Quaternion();
     this.hasOrientation = false;
+    this.laneChange = null;
 
     this.createMesh();
     this.updatePose(this.curveLength);
@@ -174,8 +175,13 @@ export class Car {
     const length = Math.max(this.curveLength, 1e-6);
     const u = THREE.MathUtils.euclideanModulo(this.position / length, 1);
 
-    const point = this.path.getPointAt(u);
-    const tangent = this.path.getTangentAt(u);
+    let point = this.path.getPointAt(u);
+    let tangent = this.path.getTangentAt(u);
+    if (this.laneChange) {
+      const { curve, progress } = this.laneChange;
+      point = this.evaluateBezier(curve, progress);
+      tangent = this.evaluateBezierDerivative(curve, progress).normalize();
+    }
 
     this.tempDirection.copy(tangent).normalize();
     // Build a Frenet-like frame: project the world up vector onto a plane
@@ -243,6 +249,75 @@ export class Car {
   adjustSpeed(delta) {
     this.setSpeed(this.speed + delta);
   }
+
+  startLaneChange(fromLane, fromProgress, targetLane, targetProgress, targetDistance, duration = 0.8, retainSpeed = false) {
+    const startPoint = fromLane.getPointAt(fromProgress);
+    const endPoint = targetLane.getPointAt(targetProgress);
+    const startDir = fromLane.getTangentAt(fromProgress).normalize();
+    const endDir = targetLane.getTangentAt(targetProgress).normalize();
+    const span = endPoint.distanceTo(startPoint);
+    const forward = Math.max(5, span * 0.5);
+    const control1 = startPoint.clone().addScaledVector(startDir, forward);
+    const control2 = endPoint.clone().addScaledVector(endDir, -forward * 0.5);
+    this.laneChange = {
+      duration,
+      elapsed: 0,
+      progress: 0,
+      startPosition: this.position,
+      targetDistance: Math.max(1, targetDistance),
+      curve: { startPoint, control1, control2, endPoint },
+      retainSpeed,
+      desiredSpeed: retainSpeed ? this.speed : null
+    };
+  }
+
+  updateLaneChange(deltaTime) {
+    if (!this.laneChange) return;
+    const state = this.laneChange;
+    const laneLength = this.path?.getLength() ?? 0;
+    if (laneLength > 0) {
+      const travelled = THREE.MathUtils.euclideanModulo(this.position - state.startPosition, laneLength);
+      state.progress = Math.min(1, travelled / state.targetDistance);
+    } else {
+      state.elapsed += deltaTime;
+      state.progress = Math.min(1, state.elapsed / state.duration);
+    }
+    if (state.retainSpeed && state.desiredSpeed !== null) {
+      this.setSpeed(Math.min(state.desiredSpeed, this.maxSpeed));
+    }
+    if (state.progress >= 1) {
+      if (state.retainSpeed && state.desiredSpeed !== null) {
+        this.setSpeed(Math.min(state.desiredSpeed, this.maxSpeed));
+      }
+      this.laneChange = null;
+    }
+  }
+
+  evaluateBezier({ startPoint, control1, control2, endPoint }, t) {
+    const u = 1 - t;
+    const uu = u * u;
+    const uuu = uu * u;
+    const tt = t * t;
+    const ttt = tt * t;
+    const point = new THREE.Vector3();
+    point.addScaledVector(startPoint, uuu);
+    point.addScaledVector(control1, 3 * uu * t);
+    point.addScaledVector(control2, 3 * u * tt);
+    point.addScaledVector(endPoint, ttt);
+    return point;
+  }
+
+  evaluateBezierDerivative({ startPoint, control1, control2, endPoint }, t) {
+    const u = 1 - t;
+    const derivative = new THREE.Vector3();
+    derivative
+      .addScaledVector(startPoint, -3 * u * u)
+      .addScaledVector(control1, 3 * u * u - 6 * u * t)
+      .addScaledVector(control2, 6 * u * t - 3 * t * t)
+      .addScaledVector(endPoint, 3 * t * t);
+    return derivative;
+  }
+
 
   setRoad(road) {
     this.road = road;
