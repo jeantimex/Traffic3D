@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { ShapeSegment } from './ShapeSegment.js';
 
 // Straight segment defined by a start and end point (meters in world space).
-export class LineSegment {
+export class LineSegment extends ShapeSegment {
   constructor(start, end) {
+    super();
     this.start = start.clone();
     this.end = end.clone();
     this.delta = new THREE.Vector3().subVectors(this.end, this.start);

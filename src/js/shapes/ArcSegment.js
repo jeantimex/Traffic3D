@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { ShapeSegment } from './ShapeSegment.js';
 
 // Circular arc segment constrained to the XZ plane (constant Y). Useful for
 // running track bends and other smooth turns.
-export class ArcSegment {
+export class ArcSegment extends ShapeSegment {
   constructor({ start, end, center, clockwise = false }) {
+    super();
     this.start = start.clone();
     this.end = end.clone();
     this.center = center.clone();
