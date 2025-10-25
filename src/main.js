@@ -98,7 +98,8 @@ class TrafficSimulation {
         maxAcceleration: car.maxAcceleration,
         comfortableDeceleration: car.comfortableDeceleration,
         safeTimeHeadway: car.safeTimeHeadway,
-        distanceGap: car.distanceGap
+        distanceGap: car.distanceGap,
+        minGap: car.minGap
       };
 
       folder.addColor(params, 'color')
@@ -145,9 +146,15 @@ class TrafficSimulation {
         .name('Safe headway')
         .onChange(value => car.setSafeTimeHeadway(value));
 
-      folder.add(params, 'distanceGap', 0.5, 10, 0.1)
+      folder.add(params, 'distanceGap', 0, 10, 0.1)
         .name('Distance gap')
         .onChange(value => car.setDistanceGap(value));
+
+      folder.add(params, 'minGap', 0, 5, 0.1)
+        .name('Min gap')
+        .onChange(value => {
+          car.minGap = Math.max(0, value);
+        });
 
       folder.open();
       this.guiFolders.push(folder);
