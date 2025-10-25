@@ -22,11 +22,27 @@ class TrafficSimulation {
   }
 
   setupScene() {
-    const shapes = createRunningTrackShapes();
-    const primaryLane = new Lane({ shapes });
-    this.road = new Road([primaryLane]);
-    this.scene.add(primaryLane.getMesh());
-    this.lane = primaryLane;
+    const baseStraight = 100;
+    const baseHalfStraight = baseStraight / 2;
+    const baseRadius = (400 - 2 * baseStraight) / (2 * Math.PI);
+    const laneWidth = 4;
+    const laneColors = [0x000000, 0x333333, 0x666666];
+
+    const laneConfigs = [0, 1, 2].map(index => ({
+      halfStraight: baseHalfStraight + index * laneWidth,
+      radius: baseRadius + index * laneWidth,
+      baseHeight: 12,
+      color: laneColors[index]
+    }));
+
+    const lanes = laneConfigs.map(config => {
+      const shapes = createRunningTrackShapes(config);
+      return new Lane({ shapes, color: config.color });
+    });
+
+    this.road = new Road(lanes);
+    lanes.forEach(lane => this.scene.add(lane.getMesh()));
+    this.primaryLane = lanes[0];
     this.cars = [];
 
     // Initial car presets. Speeds/headways can be overridden via the GUI.
@@ -36,7 +52,8 @@ class TrafficSimulation {
       { color: 0x0000ff, maxSpeed: 25, initialSpeed: 15, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 }
     ];
 
-    const laneLength = this.lane.getLength();
+    const primaryLane = this.road.getLane(0);
+    const laneLength = primaryLane.getLength();
     const initialSpacing = 8;
 
     carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
@@ -52,7 +69,7 @@ class TrafficSimulation {
       });
 
       const initialPosition = (initialSpacing * index) % laneLength;
-      this.lane.addCar(car, initialPosition);
+      primaryLane.addCar(car, initialPosition);
       this.cars.push(car);
       this.scene.add(car.getMesh());
     });
@@ -142,7 +159,10 @@ class TrafficSimulation {
 
     const deltaTime = this.clock.getDelta();
 
-    this.lane.update(deltaTime);
+    const laneCount = this.road.getLaneCount();
+    for (let i = 0; i < laneCount; i++) {
+      this.road.getLane(i)?.update(deltaTime);
+    }
 
     this.scene.update();
     this.scene.render();
@@ -152,39 +172,29 @@ class TrafficSimulation {
 new TrafficSimulation();
 
 function createRunningTrackShapes({
-  totalLength = 400,
-  straightLength = 100,
-  gap = 0,
+  halfStraight = 50,
+  radius = 32,
   baseHeight = 12
 } = {}) {
-  const radius = (totalLength - 2 * straightLength) / (2 * Math.PI);
   const y = baseHeight;
-  const halfStraight = straightLength / 2;
-
   const topLeft = new THREE.Vector3(-halfStraight, y, radius);
   const topRight = new THREE.Vector3(halfStraight, y, radius);
   const bottomRight = new THREE.Vector3(halfStraight, y, -radius);
   const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
 
   return [
-    new LineSegment(
-      topLeft,
-      topRight.clone().add(new THREE.Vector3(0, 0, gap))
-    ),
+    new LineSegment(topLeft, topRight),
     new ArcSegment({
-      start: topRight.clone().add(new THREE.Vector3(0, 0, gap)),
-      end: bottomRight.clone().add(new THREE.Vector3(gap, 0, 0)),
-      center: new THREE.Vector3(halfStraight + gap, y, gap / 2),
+      start: topRight,
+      end: bottomRight,
+      center: new THREE.Vector3(halfStraight, y, 0),
       clockwise: true
     }),
-    new LineSegment(
-      bottomRight.clone().add(new THREE.Vector3(gap, 0, 0)),
-      bottomLeft.clone().add(new THREE.Vector3(0, 0, -gap))
-    ),
+    new LineSegment(bottomRight, bottomLeft),
     new ArcSegment({
-      start: bottomLeft.clone().add(new THREE.Vector3(0, 0, -gap)),
-      end: topLeft.clone().add(new THREE.Vector3(-gap, 0, 0)),
-      center: new THREE.Vector3(-halfStraight - gap, y, -gap / 2),
+      start: bottomLeft,
+      end: topLeft,
+      center: new THREE.Vector3(-halfStraight, y, 0),
       clockwise: true
     })
   ];
