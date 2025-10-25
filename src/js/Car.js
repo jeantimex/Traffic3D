@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 
-// Represents a single vehicle travelling along a Curve. The car keeps track
+// Represents a single vehicle travelling along a lane path. The car keeps track
 // of its kinematic state (position, speed, acceleration) and updates itself
 // using the Intelligent Driver Model (IDM) to follow the vehicle ahead while
 // respecting a target speed. The class is also responsible for orienting the
 // mesh so that it matches the curve tangent and for reacting to dat.GUI edits.
 export class Car {
-  constructor(curve, {
+  constructor(path, {
     color = 0xff0000,
     length = 4,                 // meters
     width = 2,                  // meters
@@ -20,7 +20,7 @@ export class Car {
     initialSpeed = 0,           // meters / second
     initialPosition = 0         // meters along the curve
   } = {}) {
-    this.curve = curve;
+    this.path = path;
     this.color = color;
 
     this.length = length;
@@ -38,7 +38,7 @@ export class Car {
     this.speed = THREE.MathUtils.clamp(initialSpeed, 0, this.maxSpeed);
     this.acceleration = 0;
     this.position = initialPosition;
-    this.curveLength = this.curve.getLength();
+    this.curveLength = this.path.getLength();
 
     // Temporary vectors/quaternions reused per frame to avoid allocations.
     this.tempDirection = new THREE.Vector3();
@@ -98,7 +98,7 @@ export class Car {
     this.mesh.geometry = geometry;
   }
 
-  setTrackLength(length) {
+  setPathLength(length) {
     this.curveLength = length;
   }
 
@@ -148,8 +148,8 @@ export class Car {
     const length = Math.max(this.curveLength, 1e-6);
     const u = THREE.MathUtils.euclideanModulo(this.position / length, 1);
 
-    const point = this.curve.getPointAt(u);
-    const tangent = this.curve.getTangentAt(u);
+    const point = this.path.getPointAt(u);
+    const tangent = this.path.getTangentAt(u);
 
     this.tempDirection.copy(tangent).normalize();
     // Build a Frenet-like frame: project the world up vector onto a plane

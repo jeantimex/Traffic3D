@@ -1,10 +1,11 @@
 import './style.css';
 import * as THREE from 'three';
 import { Scene } from './js/Scene.js';
-import { Curve } from './js/Curve.js';
 import { Car } from './js/Car.js';
 import { Lane } from './js/Lane.js';
 import { GUI } from 'dat.gui';
+import { LineSegment } from './js/shapes/LineSegment.js';
+import { ArcSegment } from './js/shapes/ArcSegment.js';
 
 // Orchestrates the traffic simulation: builds the lane, instantiates cars,
 // wires up the IDM lane manager, and exposes runtime tweaking via dat.GUI.
@@ -20,10 +21,9 @@ class TrafficSimulation {
   }
 
   setupScene() {
-    this.curve = new Curve();
-    this.scene.add(this.curve.getMesh());
-
-    this.lane = new Lane(this.curve);
+    const shapes = createRunningTrackShapes();
+    this.lane = new Lane({ shapes });
+    this.scene.add(this.lane.getMesh());
     this.cars = [];
 
     // Initial car presets. Speeds/headways can be overridden via the GUI.
@@ -37,7 +37,7 @@ class TrafficSimulation {
     const initialSpacing = 8;
 
     carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
-      const car = new Car(this.curve, {
+      const car = new Car(this.lane, {
         color,
         maxSpeed,
         initialSpeed,
@@ -145,3 +145,35 @@ class TrafficSimulation {
 }
 
 new TrafficSimulation();
+
+function createRunningTrackShapes({
+  totalLength = 400,
+  straightLength = 100,
+  baseHeight = 12
+} = {}) {
+  const radius = (totalLength - 2 * straightLength) / (2 * Math.PI);
+  const y = baseHeight;
+  const halfStraight = straightLength / 2;
+
+  const topLeft = new THREE.Vector3(-halfStraight, y, radius);
+  const topRight = new THREE.Vector3(halfStraight, y, radius);
+  const bottomRight = new THREE.Vector3(halfStraight, y, -radius);
+  const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
+
+  return [
+    new LineSegment(topLeft, topRight),
+    new ArcSegment({
+      start: topRight,
+      end: bottomRight,
+      center: new THREE.Vector3(halfStraight, y, 0),
+      clockwise: true
+    }),
+    new LineSegment(bottomRight, bottomLeft),
+    new ArcSegment({
+      start: bottomLeft,
+      end: topLeft,
+      center: new THREE.Vector3(-halfStraight, y, 0),
+      clockwise: true
+    })
+  ];
+}

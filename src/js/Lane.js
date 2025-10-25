@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 // Internal node for the circular doubly-linked list that keeps cars ordered
-// by their arc-length position on the curve.
-class LaneNode {
+// by their arc-length position on the lane.
+class CarNode {
   constructor(car) {
     this.car = car;
     this.prev = null;
@@ -10,62 +10,201 @@ class LaneNode {
   }
 }
 
-// A Lane owns a Curve and manages a set of Car instances on that curve. It keeps
-// the cars sorted, computes IDM leader/follower relationships, and advances the
-// simulation each frame.
+// Internal node tracking an individual geometric segment (line or curve).
+class ShapeNode {
+  constructor(segment) {
+    this.segment = segment;
+    this.length = segment.getLength();
+    this.prev = null;
+    this.next = null;
+    this.startLength = 0; // Cumulative start distance along the lane.
+  }
+}
+
+// A Lane manages both the geometric path (built from line/curve segments) and
+// the ordered list of cars driving along it using the IDM model.
 export class Lane {
-  constructor(curve) {
-    this.curve = curve;
-    this.nodes = [];
-    this.totalLength = this.curve.getLength(); // meters
-    this.head = null;
+  constructor({ shapes = [], samplesPerSegment = 24, color = 0x000000 } = {}) {
+    this.samplesPerSegment = samplesPerSegment;
+    this.lineColor = color;
+
+    // Car bookkeeping
+    this.carNodes = [];
+    this.carHead = null;
+
+    // Shape bookkeeping
+    this.shapeNodes = [];
+    this.shapeHead = null;
+    this.totalLength = 0; // meters
+
+    this.mesh = null;
+    this.setShapes(shapes);
+  }
+
+  setShapes(shapes = []) {
+    this.disposeMesh();
+    this.shapeNodes = shapes.map(shape => new ShapeNode(shape));
+
+    if (this.shapeNodes.length === 0) {
+      this.totalLength = 0;
+      this.shapeHead = null;
+      return;
+    }
+
+    const len = this.shapeNodes.length;
+    let cumulative = 0;
+    for (let i = 0; i < len; i++) {
+      const node = this.shapeNodes[i];
+      node.prev = this.shapeNodes[(i - 1 + len) % len];
+      node.next = this.shapeNodes[(i + 1) % len];
+      node.startLength = cumulative;
+      cumulative += node.length;
+
+      // Ensure continuity between consecutive segments.
+      const prevSegment = node.prev.segment;
+      const prevEnd = prevSegment.getEnd();
+      const currStart = node.segment.getStart();
+      if (!prevEnd.equals(currStart)) {
+        console.warn('Lane segment continuity gap detected', prevEnd, currStart);
+      }
+    }
+
+    this.totalLength = cumulative;
+    this.shapeHead = this.shapeNodes[0];
+    this.buildMesh();
   }
 
   getLength() {
     return this.totalLength;
   }
 
-  addCar(car, initialPosition = 0) {
-    const node = new LaneNode(car);
-    this.nodes.push(node);
+  getMesh() {
+    return this.mesh;
+  }
 
-    car.setTrackLength(this.totalLength);
-    // Seed the car somewhere along the closed curve (arc-length coordinate).
+  disposeMesh() {
+    if (this.mesh) {
+      this.mesh.geometry.dispose();
+      this.mesh.material.dispose();
+      this.mesh = null;
+    }
+  }
+
+  buildMesh() {
+    const points = this.getSpacedPoints(this.samplesPerSegment);
+    if (points.length === 0) {
+      return;
+    }
+
+    // Close the loop visually.
+    if (!points[0].equals(points[points.length - 1])) {
+      points.push(points[0].clone());
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: this.lineColor });
+    this.mesh = new THREE.LineLoop(geometry, material);
+  }
+
+  getSpacedPoints(divisionsPerSegment = 24) {
+    if (!this.shapeNodes.length) {
+      return [];
+    }
+
+    const points = [];
+    this.shapeNodes.forEach((node, index) => {
+      const segmentPoints = node.segment.getSpacedPoints(divisionsPerSegment);
+      if (index > 0) {
+        segmentPoints.shift(); // Avoid duplicating shared endpoints.
+      }
+      points.push(...segmentPoints);
+    });
+
+    return points;
+  }
+
+  mapDistanceToShapeNode(distance) {
+    if (!this.shapeNodes.length || this.totalLength === 0) {
+      return null;
+    }
+
+    const target = THREE.MathUtils.euclideanModulo(distance, this.totalLength);
+    for (const node of this.shapeNodes) {
+      const end = node.startLength + node.length;
+      if (target <= end || node === this.shapeNodes[this.shapeNodes.length - 1]) {
+        const localDistance = target - node.startLength;
+        const localT = node.length > 0 ? THREE.MathUtils.clamp(localDistance / node.length, 0, 1) : 0;
+        return { node, localT };
+      }
+    }
+    return null;
+  }
+
+  getPointAt(t) {
+    if (!this.shapeNodes.length) {
+      return new THREE.Vector3();
+    }
+    const distance = THREE.MathUtils.euclideanModulo(t, 1) * this.totalLength;
+    const mapping = this.mapDistanceToShapeNode(distance);
+    return mapping ? mapping.node.segment.getPointAt(mapping.localT) : new THREE.Vector3();
+  }
+
+  getTangentAt(t) {
+    if (!this.shapeNodes.length) {
+      return new THREE.Vector3(1, 0, 0);
+    }
+    const distance = THREE.MathUtils.euclideanModulo(t, 1) * this.totalLength;
+    const mapping = this.mapDistanceToShapeNode(distance);
+    return mapping ? mapping.node.segment.getTangentAt(mapping.localT) : new THREE.Vector3(1, 0, 0);
+  }
+
+  addCar(car, initialPosition = 0) {
+    if (!this.totalLength) return null;
+
+    const node = new CarNode(car);
+    this.carNodes.push(node);
+
+    car.setPathLength(this.totalLength);
     car.position = THREE.MathUtils.euclideanModulo(initialPosition, this.totalLength);
     car.updatePose(this.totalLength);
 
-    this.sortAndLink();
+    this.sortCars();
     return node;
   }
 
   removeCar(car) {
-    const index = this.nodes.findIndex(node => node.car === car);
+    const index = this.carNodes.findIndex(node => node.car === car);
     if (index === -1) return;
-    this.nodes.splice(index, 1);
-    this.sortAndLink();
+    this.carNodes.splice(index, 1);
+    this.sortCars();
   }
 
   update(deltaTime) {
-    if (this.nodes.length === 0) {
+    if (this.carNodes.length === 0 || this.totalLength === 0) {
       return;
     }
 
-    // Keep cached length in sync so spacing on the closed curve stays accurate.
-    this.totalLength = this.curve.getLength();
-    for (const node of this.nodes) {
-      node.car.setTrackLength(this.totalLength);
+    // Keep cached length in sync in case shapes changed dynamically.
+    this.totalLength = 0;
+    for (const node of this.shapeNodes) {
+      node.length = node.segment.getLength();
+      node.startLength = this.totalLength;
+      this.totalLength += node.length;
     }
 
-    this.sortAndLink();
-    const nodeCount = this.nodes.length;
+    for (const carNode of this.carNodes) {
+      carNode.car.setPathLength(this.totalLength);
+    }
+
+    this.sortCars();
+    const nodeCount = this.carNodes.length;
     const accelerations = new Array(nodeCount);
 
     for (let i = 0; i < nodeCount; i++) {
-      const node = this.nodes[i];
+      const node = this.carNodes[i];
       const car = node.car;
 
       if (nodeCount === 1) {
-        // No leader: run free-road IDM term only.
         accelerations[i] = car.computeAcceleration(Infinity, 0);
         continue;
       }
@@ -77,33 +216,31 @@ export class Lane {
       }
       gap = Math.max(0, gap - car.halfLength - leader.halfLength);
 
-      // deltaSpeed is positive when this car is faster than the leader.
       const deltaSpeed = car.speed - leader.speed;
       accelerations[i] = car.computeAcceleration(gap, deltaSpeed);
     }
 
     for (let i = 0; i < nodeCount; i++) {
-      const node = this.nodes[i];
+      const node = this.carNodes[i];
       node.car.integrate(accelerations[i], deltaTime, this.totalLength);
     }
   }
 
-  // Sorts cars by arc-length position and rebuilds circular list connections.
-  sortAndLink() {
-    if (this.nodes.length === 0) {
-      this.head = null;
+  sortCars() {
+    if (this.carNodes.length === 0) {
+      this.carHead = null;
       return;
     }
 
-    this.nodes.sort((a, b) => a.car.position - b.car.position);
+    this.carNodes.sort((a, b) => a.car.position - b.car.position);
 
-    const len = this.nodes.length;
+    const len = this.carNodes.length;
     for (let i = 0; i < len; i++) {
-      const node = this.nodes[i];
-      node.next = this.nodes[(i + 1) % len];
-      node.prev = this.nodes[(i - 1 + len) % len];
+      const node = this.carNodes[i];
+      node.next = this.carNodes[(i + 1) % len];
+      node.prev = this.carNodes[(i - 1 + len) % len];
     }
 
-    this.head = this.nodes[0];
+    this.carHead = this.carNodes[0];
   }
 }
