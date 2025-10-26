@@ -20,11 +20,8 @@ class TrafficSimulation {
     this.stats = new Stats();
     this.stats.showPanel(0);
     document.body.appendChild(this.stats.dom);
-    this.highlightedCars = new Set();
-    this.controlledCar = null;
 
     this.setupScene();
-    this.bindControls();
     this.animate();
   }
 
@@ -65,7 +62,7 @@ class TrafficSimulation {
     const randomFloat = (min, max) => min + Math.random() * (max - min);
 
     this.road.lanes.forEach((lane, index) => {
-      const carsInLane = index === 0 ? 1 : 0;
+      const carsInLane = 2; // 2 cars per lane for more dynamic behavior
       for (let i = 0; i < carsInLane; i++) {
         const speedScale = randomFloat(0.5, 1.2);
         const accelScale = randomFloat(0.8, 1.2);
@@ -94,9 +91,6 @@ class TrafficSimulation {
         this.cars.push(car);
         this.scene.add(car.getMesh());
 
-        if (index === 0 && i === 0) {
-          this.controlledCar = car;
-        }
       }
     });
 
@@ -187,136 +181,7 @@ class TrafficSimulation {
     });
   }
 
-  bindControls() {
-    this.handleKeyDown = this.handleKeyDown.bind(this);
-    window.addEventListener('keydown', this.handleKeyDown);
-  }
 
-  handleKeyDown(event) {
-    if (!this.controlledCar) return;
-    if (event.code === 'ArrowLeft') {
-      event.preventDefault();
-      this.requestLaneChange(-1);
-    } else if (event.code === 'ArrowRight') {
-      event.preventDefault();
-      this.requestLaneChange(1);
-    } else if (event.code === 'ArrowUp') {
-      event.preventDefault();
-      this.adjustControlledCarSpeed(1);
-    } else if (event.code === 'ArrowDown') {
-      event.preventDefault();
-      this.adjustControlledCarSpeed(-1);
-    }
-  }
-
-  requestLaneChange(direction) {
-    const car = this.controlledCar;
-    if (!car || car.state === 'MERGING') return;
-
-    this.clearHighlights();
-
-    const targetIndex = car.laneIndex + direction;
-    if (targetIndex < 0 || targetIndex >= this.road.getLaneCount()) {
-      return;
-    }
-
-    const currentLane = car.getLane();
-    const targetLane = this.road.getLane(targetIndex);
-    const progress = currentLane ? (car.position / currentLane.getLength()) : 0;
-    const targetPosition = progress * targetLane.getLength();
-    const neighbors = targetLane.findNeighbors(targetPosition);
-
-    this.highlightNeighbors(neighbors);
-
-    const safety = this.isLaneChangeSafe(car, neighbors);
-    const predictedDistance = Math.max(5, car.speed * 1.0 + 0.5 * car.maxAcceleration * 1.0 * 1.0);
-    const targetLength = targetLane.getLength();
-    if (!targetLane.closed && targetPosition + predictedDistance >= targetLength) {
-      return;
-    }
-
-    if (safety.allowed) {
-      this.performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition, progress, safety.maintainSpeed);
-    }
-  }
-
-  highlightNeighbors({ front, back }) {
-    if (front) {
-      front.highlight(0x00ffff);
-      this.highlightedCars.add(front);
-    }
-    if (back) {
-      back.highlight(0xff00ff);
-      this.highlightedCars.add(back);
-    }
-  }
-
-  clearHighlights() {
-    this.highlightedCars.forEach(car => car.clearHighlight());
-    this.highlightedCars.clear();
-  }
-
-  isLaneChangeSafe(car, neighbors) {
-    const frontRequirement = car.distanceGap + car.safeTimeHeadway * car.speed + car.length;
-    const frontClear = !neighbors.front || neighbors.frontDistance > frontRequirement;
-
-    const follower = neighbors.back;
-    let followerRequirement = car.length * 0.5;
-    if (follower) {
-      followerRequirement += follower.distanceGap + follower.safeTimeHeadway * follower.speed + follower.length;
-    }
-    const backClear = !follower || neighbors.backDistance > followerRequirement;
-
-    const maintainSpeed = frontClear && backClear &&
-      (!neighbors.front || neighbors.front.speed >= car.speed - 0.5);
-
-    return {
-      allowed: frontClear && backClear,
-      maintainSpeed
-    };
-  }
-
-  adjustControlledCarSpeed(direction) {
-    if (!this.controlledCar) return;
-    const speedDelta = direction > 0 ? 1 : -1;
-    const maxDelta = direction > 0 ? 0.5 : -0.5;
-    const targetMax = Math.max(2, this.controlledCar.maxSpeed + maxDelta);
-    this.controlledCar.setMaxSpeed(targetMax);
-    this.controlledCar.adjustSpeed(speedDelta);
-  }
-
-  performLaneChange(car, currentLane, targetLane, targetIndex, targetPosition, progress, retainSpeed) {
-    if (currentLane) {
-      const fromLane = currentLane;
-      const fromLength = fromLane.getLength();
-      const fromProgress = fromLength > 0 ? car.position / fromLength : 0;
-      const targetLength = targetLane.getLength();
-      const duration = 1.0;
-      const predictedDistance = Math.max(5, car.speed * duration + 0.5 * car.maxAcceleration * duration * duration);
-      const targetDistance = Math.min(predictedDistance, targetLength > 0 ? targetLength * 0.5 : predictedDistance);
-      let endPosition = targetPosition;
-      if (targetLength > 0) {
-        if (targetLane.closed) {
-          endPosition = THREE.MathUtils.euclideanModulo(targetPosition + targetDistance, targetLength);
-        } else {
-          endPosition = Math.min(targetPosition + targetDistance, targetLength);
-          if (endPosition >= targetLength) {
-            return;
-          }
-        }
-      }
-      const toProgress = targetLength > 0 && targetLength > 1e-6 ? endPosition / targetLength : 0;
-      currentLane.removeCar(car);
-      targetLane.addCar(car, targetPosition);
-      car.setLaneIndex(targetIndex);
-      car.updatePose(targetLane.getLength());
-      car.startLaneChange(fromLane, fromProgress, targetLane, toProgress, targetDistance, duration, retainSpeed);
-      return;
-    }
-    targetLane.addCar(car, targetPosition);
-    car.setLaneIndex(targetIndex);
-    car.updatePose(targetLane.getLength());
-  }
 
   animate() {
     this.stats.begin();
@@ -327,7 +192,10 @@ class TrafficSimulation {
     for (let i = 0; i < laneCount; i++) {
       this.road.getLane(i)?.update(deltaTime);
     }
-    this.cars.forEach(car => car.updateLaneChange(deltaTime));
+    this.cars.forEach(car => {
+      car.updateLaneChange(deltaTime);
+      car.updateAutonomousLaneChange(deltaTime);
+    });
 
     this.scene.update();
     this.scene.render();

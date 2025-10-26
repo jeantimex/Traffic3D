@@ -63,6 +63,10 @@ export class Car {
     this.laneChange = null;
     this.state = 'DRIVING';
 
+    // Autonomous lane switching properties
+    this.laneChangeTimer = 0;
+    this.nextLaneChangeTime = this.getRandomLaneChangeInterval();
+
     this.createMesh();
     this.updatePose(this.curveLength);
   }
@@ -136,6 +140,7 @@ export class Car {
     if (this.laneChange?.retainSpeed) {
       return 0;
     }
+
     // Free-road term pulls the car toward its max speed when traffic is clear.
     const freeRoadTerm = Math.pow(this.speed / Math.max(this.maxSpeed, 1e-3), 4);
 
@@ -296,6 +301,10 @@ export class Car {
     }
 
     if (state.progress >= 1) {
+      // Set the merging speed as the new baseline speed
+      if (state.retainSpeed && state.desiredSpeed !== null) {
+        this.speed = state.desiredSpeed;
+      }
       this.laneChange = null;
       this.state = 'DRIVING';
     }
@@ -324,6 +333,102 @@ export class Car {
       .addScaledVector(control2, 6 * u * t - 3 * t * t)
       .addScaledVector(endPoint, 3 * t * t);
     return derivative;
+  }
+
+  getRandomLaneChangeInterval() {
+    // Random interval between 3-8 seconds
+    return 3 + Math.random() * 5;
+  }
+
+  updateAutonomousLaneChange(deltaTime) {
+    if (this.state === 'MERGING' || !this.road) return;
+
+    this.laneChangeTimer += deltaTime;
+
+    // Check if it's time to consider a lane change
+    if (this.laneChangeTimer >= this.nextLaneChangeTime) {
+      this.attemptAutonomousLaneChange();
+      this.laneChangeTimer = 0;
+      this.nextLaneChangeTime = this.getRandomLaneChangeInterval();
+    }
+  }
+
+  attemptAutonomousLaneChange() {
+    if (!this.road || this.state === 'MERGING') return;
+
+    const laneCount = this.road.getLaneCount();
+    if (laneCount <= 1) return;
+
+    // Randomly choose direction: -1 (left) or 1 (right)
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const targetIndex = this.laneIndex + direction;
+
+    // Check if target lane exists
+    if (targetIndex < 0 || targetIndex >= laneCount) return;
+
+    const currentLane = this.getLane();
+    const targetLane = this.road.getLane(targetIndex);
+    const progress = currentLane ? (this.position / currentLane.getLength()) : 0;
+    const targetPosition = progress * targetLane.getLength();
+    const neighbors = targetLane.findNeighbors(targetPosition);
+
+    // Check if lane change is safe
+    const safety = this.isLaneChangeSafe(neighbors);
+    if (safety.allowed) {
+      this.performAutonomousLaneChange(currentLane, targetLane, targetIndex, targetPosition, progress, safety.maintainSpeed);
+    }
+  }
+
+  isLaneChangeSafe(neighbors) {
+    const frontRequirement = this.distanceGap + this.safeTimeHeadway * this.speed + this.length;
+    const frontClear = !neighbors.front || neighbors.frontDistance > frontRequirement;
+
+    const follower = neighbors.back;
+    let followerRequirement = this.length * 0.5;
+    if (follower) {
+      followerRequirement += follower.distanceGap + follower.safeTimeHeadway * follower.speed + follower.length;
+    }
+    const backClear = !follower || neighbors.backDistance > followerRequirement;
+
+    const maintainSpeed = frontClear && backClear &&
+      (!neighbors.front || neighbors.front.speed >= this.speed - 0.5);
+
+    return {
+      allowed: frontClear && backClear,
+      maintainSpeed
+    };
+  }
+
+  performAutonomousLaneChange(currentLane, targetLane, targetIndex, targetPosition, progress, retainSpeed) {
+    if (currentLane) {
+      const fromLane = currentLane;
+      const fromLength = fromLane.getLength();
+      const fromProgress = fromLength > 0 ? this.position / fromLength : 0;
+      const targetLength = targetLane.getLength();
+      const duration = 1.0;
+      const predictedDistance = Math.max(5, this.speed * duration + 0.5 * this.maxAcceleration * duration * duration);
+      const targetDistance = Math.min(predictedDistance, targetLength > 0 ? targetLength * 0.5 : predictedDistance);
+      let endPosition = targetPosition;
+      if (targetLength > 0) {
+        if (targetLane.closed) {
+          endPosition = THREE.MathUtils.euclideanModulo(targetPosition + targetDistance, targetLength);
+        } else {
+          endPosition = Math.min(targetPosition + targetDistance, targetLength);
+          if (endPosition >= targetLength) {
+            return;
+          }
+        }
+      }
+      currentLane.removeCar(this);
+      targetLane.addCar(this, targetPosition);
+      this.setLaneIndex(targetIndex);
+      this.updatePose(targetLane.getLength());
+      this.startLaneChange(fromLane, fromProgress, targetLane, endPosition / targetLength, targetDistance, duration, retainSpeed);
+      return;
+    }
+    targetLane.addCar(this, targetPosition);
+    this.setLaneIndex(targetIndex);
+    this.updatePose(targetLane.getLength());
   }
 
 
