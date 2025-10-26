@@ -6,6 +6,7 @@ import { Lane } from './js/Lane.js';
 import { Road } from './js/Road.js';
 import { GUI } from 'dat.gui';
 import { LineSegment } from './js/shapes/LineSegment.js';
+import { ArcSegment } from './js/shapes/ArcSegment.js';
 import Stats from 'stats.js';
 
 // Orchestrates the traffic simulation: builds the lane, instantiates cars,
@@ -28,18 +29,21 @@ class TrafficSimulation {
   }
 
   setupScene() {
-    const laneLength = 200;
+    const baseStraight = 100;
+    const baseHalfStraight = baseStraight / 2;
+    const baseRadius = (400 - 2 * baseStraight) / (2 * Math.PI);
     const laneWidth = 4;
     const laneColors = [0xff0000, 0x00ff00, 0x0000ff];
 
     const laneConfigs = [0, 1, 2].map(index => ({
-      start: new THREE.Vector3(0, 12, index * laneWidth),
-      end: new THREE.Vector3(laneLength, 12, index * laneWidth),
+      halfStraight: baseHalfStraight + index * laneWidth,
+      radius: baseRadius + index * laneWidth,
+      baseHeight: 12,
       color: laneColors[index]
     }));
 
     const lanes = laneConfigs.map(config => {
-      const shapes = createStraightLaneShapes(config);
+      const shapes = createRunningTrackShapes(config);
       return new Lane({ shapes, color: config.color });
     });
 
@@ -85,7 +89,7 @@ class TrafficSimulation {
 
         const spacing = 25;
         const offset = randomFloat(0, spacing * laneCount);
-        const initialPosition = (i * spacing + offset) % laneLength;
+        const initialPosition = (i * spacing + offset) % lane.getLength();
         lane.addCar(car, initialPosition);
         this.cars.push(car);
         this.scene.add(car.getMesh());
@@ -207,7 +211,7 @@ class TrafficSimulation {
 
   requestLaneChange(direction) {
     const car = this.controlledCar;
-    if (!car) return;
+    if (!car || car.state === 'MERGING') return;
 
     this.clearHighlights();
 
@@ -333,9 +337,31 @@ class TrafficSimulation {
 
 new TrafficSimulation();
 
-function createStraightLaneShapes({
-  start = new THREE.Vector3(0, 0, 0),
-  end = new THREE.Vector3(100, 0, 0)
+function createRunningTrackShapes({
+  halfStraight = 50,
+  radius = 32,
+  baseHeight = 12
 } = {}) {
-  return [new LineSegment(start, end)];
+  const y = baseHeight;
+  const topLeft = new THREE.Vector3(-halfStraight, y, radius);
+  const topRight = new THREE.Vector3(halfStraight, y, radius);
+  const bottomRight = new THREE.Vector3(halfStraight, y, -radius);
+  const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
+
+  return [
+    new LineSegment(topLeft, topRight),
+    new ArcSegment({
+      start: topRight,
+      end: bottomRight,
+      center: new THREE.Vector3(halfStraight, y, 0),
+      clockwise: true
+    }),
+    new LineSegment(bottomRight, bottomLeft),
+    new ArcSegment({
+      start: bottomLeft,
+      end: topLeft,
+      center: new THREE.Vector3(-halfStraight, y, 0),
+      clockwise: true
+    })
+  ];
 }

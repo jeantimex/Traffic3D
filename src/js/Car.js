@@ -61,6 +61,7 @@ export class Car {
     this.currentQuaternion = new THREE.Quaternion();
     this.hasOrientation = false;
     this.laneChange = null;
+    this.state = 'DRIVING';
 
     this.createMesh();
     this.updatePose(this.curveLength);
@@ -160,7 +161,13 @@ export class Car {
   // Semi-implicit Euler step for the arc-length position along the lane.
   integrate(acceleration, deltaTime, trackLength) {
     this.acceleration = acceleration;
-    this.speed = THREE.MathUtils.clamp(this.speed + this.acceleration * deltaTime, 0, this.maxSpeed);
+
+    // During lane change with retainSpeed, keep the original speed constant
+    if (this.laneChange?.retainSpeed && this.laneChange.desiredSpeed !== null) {
+      this.speed = this.laneChange.desiredSpeed;
+    } else {
+      this.speed = THREE.MathUtils.clamp(this.speed + this.acceleration * deltaTime, 0, this.maxSpeed);
+    }
 
     const nextPosition = this.position + this.speed * deltaTime;
     // Wrap the arc-length position because the curve is closed.
@@ -254,6 +261,7 @@ export class Car {
   }
 
   startLaneChange(fromLane, fromProgress, targetLane, targetProgress, targetDistance, duration = 0.8, retainSpeed = false) {
+    if (this.state === 'MERGING') return;
     const startPoint = fromLane.getPointAt(fromProgress);
     const endPoint = targetLane.getPointAt(targetProgress);
     const startDir = fromLane.getTangentAt(fromProgress).normalize();
@@ -272,6 +280,7 @@ export class Car {
       retainSpeed,
       desiredSpeed: retainSpeed ? this.speed : null
     };
+    this.state = 'MERGING';
   }
 
   updateLaneChange(deltaTime) {
@@ -285,14 +294,10 @@ export class Car {
       state.elapsed += deltaTime;
       state.progress = Math.min(1, state.elapsed / state.duration);
     }
-    if (state.retainSpeed && state.desiredSpeed !== null) {
-      this.setSpeed(Math.min(state.desiredSpeed, this.maxSpeed));
-    }
+
     if (state.progress >= 1) {
-      if (state.retainSpeed && state.desiredSpeed !== null) {
-        this.setSpeed(Math.min(state.desiredSpeed, this.maxSpeed));
-      }
       this.laneChange = null;
+      this.state = 'DRIVING';
     }
   }
 
