@@ -33,7 +33,8 @@ export class Scene {
   }
 
   setupCamera() {
-    this.camera.position.set(70, 45, 70);
+    this.camera.up.set(1, 0, 0);
+    this.camera.position.set(0, 150, 0);
     this.camera.lookAt(0, 0, 0);
   }
 
@@ -41,6 +42,8 @@ export class Scene {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
+    this.controls.enableRotate = false;
+    this.controls.enablePan = true;
   }
 
   onWindowResize() {

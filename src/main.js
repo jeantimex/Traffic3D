@@ -6,7 +6,6 @@ import { Lane } from './js/Lane.js';
 import { Road } from './js/Road.js';
 import { GUI } from 'dat.gui';
 import { LineSegment } from './js/shapes/LineSegment.js';
-import { ArcSegment } from './js/shapes/ArcSegment.js';
 
 // Orchestrates the traffic simulation: builds the lane, instantiates cars,
 // wires up the IDM lane manager, and exposes runtime tweaking via dat.GUI.
@@ -22,22 +21,19 @@ class TrafficSimulation {
   }
 
   setupScene() {
-    const baseStraight = 100;
-    const baseHalfStraight = baseStraight / 2;
-    const baseRadius = (400 - 2 * baseStraight) / (2 * Math.PI);
+    const laneLength = 100;
+    const halfLength = laneLength / 2;
     const laneWidth = 4;
     const laneColors = [0x000000, 0x333333, 0x666666];
+    const baseHeight = 12;
 
-    const laneConfigs = [0, 1, 2].map(index => ({
-      halfStraight: baseHalfStraight + index * laneWidth,
-      radius: baseRadius + index * laneWidth,
-      baseHeight: 12,
-      color: laneColors[index]
-    }));
-
-    const lanes = laneConfigs.map(config => {
-      const shapes = createRunningTrackShapes(config);
-      return new Lane({ shapes, color: config.color });
+    const lanes = [0, 1, 2].map(index => {
+      const lateralOffset = (index - 1) * laneWidth;
+      const shapes = createRunningTrackShapes({
+        start: new THREE.Vector3(-halfLength, baseHeight, lateralOffset),
+        end: new THREE.Vector3(halfLength, baseHeight, lateralOffset)
+      });
+      return new Lane({ shapes, color: laneColors[index] });
     });
 
     this.road = new Road(lanes);
@@ -52,14 +48,11 @@ class TrafficSimulation {
       { color: 0x0000ff, maxSpeed: 25, initialSpeed: 15, safeTimeHeadway: 0.3, minGap: 1.0, distanceGap: 2.5 }
     ];
 
-    const primaryLane = this.road.getLane(0);
-    const laneLength = primaryLane.getLength();
-    const initialSpacing = 8;
-
-    carConfigs.forEach(({ color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap }, index) => {
+    carConfigs.forEach((config, index) => {
+      const { color, maxSpeed, initialSpeed, safeTimeHeadway, minGap, distanceGap } = config;
       const car = new Car({
         road: this.road,
-        laneIndex: 0,
+        laneIndex: index,
         color,
         maxSpeed,
         initialSpeed,
@@ -68,8 +61,8 @@ class TrafficSimulation {
         distanceGap
       });
 
-      const initialPosition = (initialSpacing * index) % laneLength;
-      primaryLane.addCar(car, initialPosition);
+      const lane = this.road.getLane(index);
+      lane?.addCar(car, 0);
       this.cars.push(car);
       this.scene.add(car.getMesh());
     });
@@ -179,30 +172,10 @@ class TrafficSimulation {
 new TrafficSimulation();
 
 function createRunningTrackShapes({
-  halfStraight = 50,
-  radius = 32,
-  baseHeight = 12
+  start = new THREE.Vector3(-50, 12, 0),
+  end = new THREE.Vector3(50, 12, 0)
 } = {}) {
-  const y = baseHeight;
-  const topLeft = new THREE.Vector3(-halfStraight, y, radius);
-  const topRight = new THREE.Vector3(halfStraight, y, radius);
-  const bottomRight = new THREE.Vector3(halfStraight, y, -radius);
-  const bottomLeft = new THREE.Vector3(-halfStraight, y, -radius);
-
   return [
-    new LineSegment(topLeft, topRight),
-    new ArcSegment({
-      start: topRight,
-      end: bottomRight,
-      center: new THREE.Vector3(halfStraight, y, 0),
-      clockwise: true
-    }),
-    new LineSegment(bottomRight, bottomLeft),
-    new ArcSegment({
-      start: bottomLeft,
-      end: topLeft,
-      center: new THREE.Vector3(-halfStraight, y, 0),
-      clockwise: true
-    })
+    new LineSegment(start, end)
   ];
 }
