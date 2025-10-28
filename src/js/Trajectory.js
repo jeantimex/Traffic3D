@@ -41,6 +41,15 @@ export class Trajectory {
     this.next = new LanePosition({ car });
     this.transition = null;
     this.isChanging = false;
+    this.debugGroup = null;
+    this.ghostCurrent = null;
+    this.ghostNext = null;
+
+    this.tempDirection = new THREE.Vector3();
+    this.tempRight = new THREE.Vector3();
+    this.tempUp = new THREE.Vector3();
+    this.worldUp = new THREE.Vector3(0, 1, 0);
+    this.rotationMatrix = new THREE.Matrix4();
   }
 
   getCurrentLane() {
@@ -86,11 +95,13 @@ export class Trajectory {
     this._incrementLanePosition(this.current, delta);
 
     if (!this.isChanging || !this.transition) {
+      this._updateGhosts();
       return;
     }
 
     this.transition.position = Math.min(this.transition.position + delta, this.transition.length);
     this._incrementLanePosition(this.next, delta);
+    this._updateGhosts();
 
     const epsilon = 1e-3;
     if (this.transition.position + epsilon >= this.transition.length) {
@@ -200,7 +211,7 @@ export class Trajectory {
     this.next.setPosition(initialNextPosition);
     this.next.acquire();
 
-    this.transition = {
+    const transition = {
       curve,
       path: new BezierPath(curve),
       position: 0,
@@ -209,6 +220,18 @@ export class Trajectory {
       endPosition
     };
 
+    this._createDebugVisuals({
+      startPoint,
+      controlPoint1,
+      controlPoint2,
+      endPoint,
+      curve
+    });
+
+    this._createGhosts();
+    this._updateGhosts();
+
+    this.transition = transition;
     this.isChanging = true;
   }
 
@@ -228,6 +251,151 @@ export class Trajectory {
     this.transition = null;
     this.isChanging = false;
 
+    this._disposeDebugVisuals();
+    this._disposeGhosts();
+
     this.car.laneIndex = this.getCurrentLaneIndex();
+  }
+
+  _createDebugVisuals({ startPoint, controlPoint1, controlPoint2, endPoint, curve }) {
+    this._disposeDebugVisuals();
+
+    const mesh = this.car.getMesh?.();
+    const parent = mesh?.parent;
+    if (!mesh || !parent) {
+      return;
+    }
+
+    const makeSphere = (position, color) => {
+      const geometry = new THREE.SphereGeometry(0.5, 12, 12);
+      const material = new THREE.MeshBasicMaterial({ color });
+      const sphere = new THREE.Mesh(geometry, material);
+      sphere.position.copy(position);
+      return sphere;
+    };
+
+    const points = curve.getPoints(20);
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+
+    const group = new THREE.Group();
+    group.add(makeSphere(startPoint, 0xff0000));
+    group.add(makeSphere(controlPoint1, 0x00ff00));
+    group.add(makeSphere(controlPoint2, 0x0000ff));
+    group.add(makeSphere(endPoint, 0xffff00));
+    group.add(line);
+
+    parent.add(group);
+    this.debugGroup = group;
+  }
+
+  _disposeDebugVisuals() {
+    if (!this.debugGroup) {
+      return;
+    }
+
+    this.debugGroup.traverse(object => {
+      if (object.isMesh) {
+        object.geometry?.dispose();
+        object.material?.dispose();
+      } else if (object.isLine) {
+        object.geometry?.dispose();
+        object.material?.dispose();
+      }
+    });
+
+    this.debugGroup.parent?.remove(this.debugGroup);
+    this.debugGroup = null;
+  }
+
+  _createGhosts() {
+    this._disposeGhosts();
+
+    const mesh = this.car.getMesh?.();
+    const parent = mesh?.parent;
+    if (!mesh || !parent) {
+      return;
+    }
+
+    const createGhost = color => {
+      const geometry = new THREE.BoxGeometry(this.car.width, this.car.height, this.car.length);
+      const edges = new THREE.EdgesGeometry(geometry);
+      const material = new THREE.LineDashedMaterial({
+        color,
+        dashSize: 2,
+        gapSize: 1,
+        transparent: true,
+        opacity: 0.7
+      });
+      const ghost = new THREE.LineSegments(edges, material);
+      ghost.computeLineDistances();
+      ghost.visible = false;
+      return ghost;
+    };
+
+    this.ghostCurrent = createGhost(0xffa500);
+    this.ghostNext = createGhost(0x00ffff);
+
+    parent.add(this.ghostCurrent);
+    parent.add(this.ghostNext);
+  }
+
+  _disposeGhosts() {
+    const disposeGhost = ghost => {
+      if (!ghost) {
+        return;
+      }
+      ghost.parent?.remove(ghost);
+      ghost.geometry?.dispose();
+      ghost.material?.dispose();
+    };
+
+    disposeGhost(this.ghostCurrent);
+    disposeGhost(this.ghostNext);
+
+    this.ghostCurrent = null;
+    this.ghostNext = null;
+  }
+
+  _updateGhosts() {
+    if (!this.ghostCurrent || !this.ghostNext) {
+      return;
+    }
+
+    const updateGhost = (ghost, lanePosition) => {
+      if (!this.isChanging || !lanePosition?.lane) {
+        ghost.visible = false;
+        return;
+      }
+
+      const lane = lanePosition.lane;
+      const length = Math.max(lane.getLength(), 1e-6);
+      const u = THREE.MathUtils.euclideanModulo(lanePosition.position / length, 1);
+
+      const point = lane.getPointAt(u);
+      const tangent = lane.getTangentAt(u).normalize();
+
+      this.tempDirection.copy(tangent);
+      this.tempRight.crossVectors(this.worldUp, this.tempDirection);
+      if (this.tempRight.lengthSq() < 1e-6) {
+        this.tempRight.set(1, 0, 0).cross(this.tempDirection);
+      }
+      this.tempRight.normalize();
+      this.tempUp.crossVectors(this.tempDirection, this.tempRight).normalize();
+
+      this.rotationMatrix.makeBasis(this.tempRight, this.tempUp, this.tempDirection);
+      ghost.quaternion.setFromRotationMatrix(this.rotationMatrix);
+      ghost.position.copy(point).addScaledVector(this.tempUp, this.car.height * 0.5);
+      ghost.visible = true;
+    };
+
+    updateGhost(this.ghostCurrent, this.current);
+    updateGhost(this.ghostNext, this.next);
+
+    if (!this.isChanging) {
+      this.ghostCurrent.visible = false;
+      this.ghostNext.visible = false;
+    }
   }
 }
