@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Trajectory } from './Trajectory.js';
 
 // Represents a single vehicle travelling along a lane path. The car keeps track
 // of its kinematic state (position, speed, acceleration) and updates itself
@@ -25,10 +26,7 @@ export class Car {
   } = {}) {
     this.road = road;
     this.laneIndex = laneIndex;
-    this.path = path || (road ? road.getLane(laneIndex) : null);
-    if (!this.path) {
-      throw new Error('Car requires a valid lane path. Provide a road with lanes or a `path` override.');
-    }
+    this.path = path || null;
     this.color = color;
 
     this.length = length;
@@ -48,7 +46,8 @@ export class Car {
     this.speed = THREE.MathUtils.clamp(initialSpeed, 0, this.maxSpeed);
     this.acceleration = 0;
     this.position = initialPosition;
-    this.curveLength = this.path.getLength();
+    this.curveLength = 0;
+    this.trajectory = null;
 
     // Temporary vectors/quaternions reused per frame to avoid allocations.
     this.tempDirection = new THREE.Vector3();
@@ -61,7 +60,6 @@ export class Car {
     this.hasOrientation = false;
 
     this.createMesh();
-    this.updatePose(this.curveLength);
   }
 
   // Creates a simple box to represent the car body. Geometry is rebuilt when
@@ -110,6 +108,7 @@ export class Car {
 
   setPathLength(length) {
     this.curveLength = length;
+    this.trajectory?.updateLaneLength(length);
   }
 
   // Intelligent Driver Model (IDM) acceleration response.
@@ -138,29 +137,46 @@ export class Car {
     return acceleration;
   }
 
-  // Semi-implicit Euler step for the arc-length position along the lane.
-  integrate(acceleration, deltaTime, trackLength) {
+  // Semi-implicit Euler step for the arc-length position along the active path.
+  integrate(acceleration, deltaTime) {
+    if (!this.trajectory) {
+      return;
+    }
+
     this.acceleration = acceleration;
     this.speed = THREE.MathUtils.clamp(this.speed + this.acceleration * deltaTime, 0, this.maxSpeed);
 
-    const nextPosition = this.position + this.speed * deltaTime;
-    // Wrap the arc-length position because the curve is closed.
-    this.position = THREE.MathUtils.euclideanModulo(nextPosition, trackLength);
+    const distanceTravelled = this.speed * deltaTime;
+    this.trajectory.advance(distanceTravelled);
 
-    this.updatePose(trackLength);
+    const state = this.trajectory.getSpatialState();
+    this.curveLength = state.length;
+    this.position = this.trajectory.current?.position ?? state.position;
+    this.path = state.path;
+
+    this.updatePose();
   }
 
   // Aligns the car with the curve tangent and keeps the mesh hovering above it.
-  updatePose(trackLength) {
-    if (trackLength > 0) {
-      this.curveLength = trackLength;
+  updatePose() {
+    if (!this.trajectory) {
+      return;
     }
 
-    const length = Math.max(this.curveLength, 1e-6);
-    const u = THREE.MathUtils.euclideanModulo(this.position / length, 1);
+    const state = this.trajectory.getSpatialState();
+    const { path, length, position, t } = state;
+    if (!path || length <= 0) {
+      return;
+    }
 
-    const point = this.path.getPointAt(u);
-    const tangent = this.path.getTangentAt(u);
+    const u = Number.isFinite(t) ? t : THREE.MathUtils.euclideanModulo(position / length, 1);
+
+    this.path = path;
+    this.curveLength = length;
+    this.position = this.trajectory.current?.position ?? position;
+
+    const point = path.getPointAt(u);
+    const tangent = path.getTangentAt(u);
 
     this.tempDirection.copy(tangent).normalize();
     // Build a Frenet-like frame: project the world up vector onto a plane
@@ -225,6 +241,33 @@ export class Car {
     }
   }
 
+  attachToLanePosition(lanePosition) {
+    if (!lanePosition) {
+      throw new Error('attachToLanePosition requires a valid LanePosition');
+    }
+
+    if (!this.trajectory) {
+      this.trajectory = new Trajectory({ car: this, lanePosition });
+    } else {
+      this.trajectory.current = lanePosition;
+      this.trajectory.current.isPrimary = true;
+    }
+
+    this.position = lanePosition.position;
+    this.curveLength = lanePosition.lane?.getLength() ?? 0;
+    this.path = lanePosition.lane;
+    this.trajectory.updateLaneLength(this.curveLength);
+    this.updatePose();
+  }
+
+  requestLaneChange(direction) {
+    return this.trajectory?.tryChangeLane(direction) ?? false;
+  }
+
+  isChangingLane() {
+    return this.trajectory?.isChanging ?? false;
+  }
+
   setRoad(road) {
     this.road = road;
     if (road && typeof this.laneIndex === 'number') {
@@ -252,7 +295,7 @@ export class Car {
   }
 
   getLane() {
-    return this.path;
+    return this.trajectory?.getCurrentLane() || this.path;
   }
 
   // Expose mesh for scene graph parenting.

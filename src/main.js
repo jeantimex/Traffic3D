@@ -18,6 +18,8 @@ class TrafficSimulation {
 
     this.setupScene();
     this.animate();
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    window.addEventListener('keydown', this.handleKeyDown);
   }
 
   setupScene() {
@@ -62,7 +64,10 @@ class TrafficSimulation {
       });
 
       const lane = this.road.getLane(index);
-      lane?.addCar(car, 0);
+      const lanePosition = lane?.addCar(car, 0);
+      if (lanePosition) {
+        car.attachToLanePosition(lanePosition);
+      }
       this.cars.push(car);
       this.scene.add(car.getMesh());
     });
@@ -152,6 +157,23 @@ class TrafficSimulation {
       folder.open();
       this.guiFolders.push(folder);
     });
+  }
+
+  handleKeyDown(event) {
+    const primaryCar = this.cars[0];
+    if (!primaryCar) {
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      if (primaryCar.requestLaneChange(-1)) {
+        event.preventDefault();
+      }
+    } else if (event.key === 'ArrowRight') {
+      if (primaryCar.requestLaneChange(1)) {
+        event.preventDefault();
+      }
+    }
   }
 
   animate() {

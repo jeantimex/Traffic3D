@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { LanePosition } from './LanePosition.js';
 
 // Internal node for the circular doubly-linked list that keeps cars ordered
 // by their arc-length position on the lane.
 class CarNode {
-  constructor(car) {
-    this.car = car;
+  constructor(lanePosition) {
+    this.lanePosition = lanePosition;
     this.prev = null;
     this.next = null;
   }
@@ -77,6 +78,33 @@ export class Lane {
 
   setLaneIndex(index) {
     this.laneIndex = index;
+  }
+
+  registerPosition(lanePosition) {
+    if (!lanePosition) {
+      return;
+    }
+
+    const node = new CarNode(lanePosition);
+    lanePosition.node = node;
+    lanePosition.lane = this;
+
+    this.carNodes.push(node);
+    this.sortCars();
+  }
+
+  unregisterPosition(lanePosition) {
+    if (!lanePosition?.node) {
+      return;
+    }
+
+    const index = this.carNodes.indexOf(lanePosition.node);
+    if (index !== -1) {
+      this.carNodes.splice(index, 1);
+    }
+    lanePosition.node = null;
+    lanePosition.lane = null;
+    this.sortCars();
   }
 
   disposeMesh() {
@@ -164,25 +192,27 @@ export class Lane {
     return mapping ? mapping.node.segment.getTangentAt(mapping.localT) : new THREE.Vector3(1, 0, 0);
   }
 
-  addCar(car, initialPosition = 0) {
+  addCar(car, initialPosition = 0, { isPrimary = true } = {}) {
     if (!this.totalLength) return null;
 
-    const node = new CarNode(car);
-    this.carNodes.push(node);
+    const lanePosition = new LanePosition({
+      car,
+      lane: this,
+      position: THREE.MathUtils.euclideanModulo(initialPosition, this.totalLength),
+      isPrimary
+    });
 
-    car.setPathLength(this.totalLength);
-    car.position = THREE.MathUtils.euclideanModulo(initialPosition, this.totalLength);
-    car.updatePose(this.totalLength);
+    lanePosition.acquire();
 
-    this.sortCars();
-    return node;
+    car.setPathLength?.(this.totalLength);
+
+    return lanePosition;
   }
 
   removeCar(car) {
-    const index = this.carNodes.findIndex(node => node.car === car);
-    if (index === -1) return;
-    this.carNodes.splice(index, 1);
-    this.sortCars();
+    this.carNodes
+      .filter(node => node.lanePosition.car === car)
+      .forEach(node => node.lanePosition.release());
   }
 
   update(deltaTime) {
@@ -198,8 +228,12 @@ export class Lane {
       this.totalLength += node.length;
     }
 
-    for (const carNode of this.carNodes) {
-      carNode.car.setPathLength(this.totalLength);
+    for (const node of this.carNodes) {
+      const lanePosition = node.lanePosition;
+      if (!lanePosition.free && lanePosition.lane === this) {
+        lanePosition.setPosition(lanePosition.position);
+        lanePosition.car.setPathLength?.(this.totalLength);
+      }
     }
 
     this.sortCars();
@@ -208,15 +242,34 @@ export class Lane {
 
     for (let i = 0; i < nodeCount; i++) {
       const node = this.carNodes[i];
-      const car = node.car;
+      const lanePosition = node.lanePosition;
+      const car = lanePosition.car;
+
+      if (!lanePosition.isPrimary) {
+        accelerations[i] = null;
+        continue;
+      }
 
       if (nodeCount === 1) {
         accelerations[i] = car.computeAcceleration(Infinity, 0);
         continue;
       }
 
-      const leader = node.next.car;
-      let gap = leader.position - car.position;
+      let nextNode = node.next;
+      let leaderLanePosition = nextNode?.lanePosition;
+      // Skip ghost copies of the same car if they appear consecutively.
+      while (leaderLanePosition && leaderLanePosition.car === car && nextNode !== node) {
+        nextNode = nextNode.next;
+        leaderLanePosition = nextNode?.lanePosition;
+      }
+
+      if (!leaderLanePosition || leaderLanePosition.car === car) {
+        accelerations[i] = car.computeAcceleration(Infinity, 0);
+        continue;
+      }
+
+      const leader = leaderLanePosition.car;
+      let gap = leaderLanePosition.position - lanePosition.position;
       if (gap <= 0) {
         gap += this.totalLength;
       }
@@ -228,7 +281,11 @@ export class Lane {
 
     for (let i = 0; i < nodeCount; i++) {
       const node = this.carNodes[i];
-      node.car.integrate(accelerations[i], deltaTime, this.totalLength);
+      const lanePosition = node.lanePosition;
+      if (!lanePosition.isPrimary) {
+        continue;
+      }
+      lanePosition.car.integrate(accelerations[i], deltaTime);
     }
   }
 
@@ -238,7 +295,7 @@ export class Lane {
       return;
     }
 
-    this.carNodes.sort((a, b) => a.car.position - b.car.position);
+    this.carNodes.sort((a, b) => a.lanePosition.position - b.lanePosition.position);
 
     const len = this.carNodes.length;
     for (let i = 0; i < len; i++) {
